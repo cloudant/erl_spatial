@@ -7,9 +7,9 @@ index_create_test() ->
 	?assertEqual({ok, <<>>}, erl_spatial:index_create()).
 
 index_test() ->
-    Min = {0, 0},
-    Max = {1, 1},
-    DocId = <<"test">>,
+	Min = {0, 0},
+	Max = {1, 1},
+	DocId = <<"test">>,
 
 	{ok, Idx} = erl_spatial:index_create(),
 	?assertEqual(ok, erl_spatial:index_insert(Idx, DocId, Min, Max)),
@@ -19,7 +19,8 @@ index_test() ->
 	?assertEqual({ok, [DocId]}, erl_spatial:index_intersects(Idx, Min, Max)),
 
 	% check the misses
-	?assertEqual({ok, 0}, erl_spatial:index_intersects_count(Idx, {2, 2}, {3, 3})),
+	?assertEqual({ok, 0}, 
+		erl_spatial:index_intersects_count(Idx, {2, 2}, {3, 3})),
 
 	% clean up
 	?assertEqual(ok, erl_spatial:index_delete(Idx, DocId, Min, Max)),

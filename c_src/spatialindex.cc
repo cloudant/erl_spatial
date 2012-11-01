@@ -24,89 +24,100 @@ void
 idx_state_dtor(ErlNifEnv* env, void* obj);
 
 int
-get_min_max(ErlNifEnv* env, double* mins, double* maxs, const ERL_NIF_TERM* min_tuple, const ERL_NIF_TERM* max_tuple, int dims);
+get_min_max(ErlNifEnv* env, double* mins, double* maxs, 
+	const ERL_NIF_TERM* min_tuple, const ERL_NIF_TERM* max_tuple, int dims);
 
 int64_t 
 hash(const char* szVal);
 
 RTError
-set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPropertyH props);
+set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, 
+														IndexPropertyH props);
 
 int
 load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 {
-	ErlNifResourceFlags flags = (ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
+	ErlNifResourceFlags flags = 
+				(ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
 	ErlNifResourceType* res;
-    
-    res = enif_open_resource_type(env, NULL, "index_type", idx_state_dtor, flags, NULL);
-    
-    if (res == NULL)
-    {
-    	return -1;
-    }
-    else
-    {
-    	assert(index_type == NULL);
-    	index_type = res;
-    	
+
+	res = enif_open_resource_type(env, NULL, "index_type", idx_state_dtor,
+																 flags, NULL);
+
+	if (res == NULL)
+	{
+		return -1;
+	}
+	else
+	{
+		assert(index_type == NULL);
+		index_type = res;
+
 		idx_atoms.ok = enif_make_atom(env, "ok");
 		idx_atoms.error = enif_make_atom(env, "error");
-    	
-    	return 0;
-    }	
+
+		return 0;
+	}
 }
 
 ERL_NIF_TERM
 index_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state* pState;
-  	ERL_NIF_TERM item, items;
+	ERL_NIF_TERM item, items;
 	const ERL_NIF_TERM* tuple;
-    int arity;
-  	
-  	ERL_NIF_TERM result;
+	int arity;
 
-  	if (!enif_is_list(env, argv[0]))
-  		return enif_make_badarg(env);
+	ERL_NIF_TERM result;
+
+	if (!enif_is_list(env, argv[0]))
+		return enif_make_badarg(env);
 
 	IndexPropertyH props = IndexProperty_Create();
 
-  	// parse index property options
-  	items = argv[0];
-  	while(enif_get_list_cell(env, items, &item, &items)) {
-  		if(enif_get_tuple(env, item, &arity, &tuple) && (arity == 2)) {
-  			int propType;
-  			if (enif_get_int(env, tuple[0], &propType))
-  			{
-  				set_property(env, propType, tuple[1], props);		
-  			}
-  			else
-  			{
-		        IndexProperty_Destroy(props);	
-		        return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unrecognized property type", ERL_NIF_LATIN1));  				
-  			}
-        }
-        else
-        {
-	        IndexProperty_Destroy(props);	
-	        return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Arguments are required to be a list of tuples, {Key, Value}", ERL_NIF_LATIN1));
-        }
-  	}
-        
- 	pState = (idx_state*)enif_alloc_resource(index_type, sizeof(idx_state));
+	// parse index property options
+	items = argv[0];
+	while(enif_get_list_cell(env, items, &item, &items)) {
+		if(enif_get_tuple(env, item, &arity, &tuple) && (arity == 2)) {
+			int propType;
+			if (enif_get_int(env, tuple[0], &propType))
+			{
+				set_property(env, propType, tuple[1], props);		
+			}
+			else
+			{
+				IndexProperty_Destroy(props);
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env, "Unrecognized property type",
+						ERL_NIF_LATIN1));
+			}
+		}
+		else
+		{
+			IndexProperty_Destroy(props);	
+			return enif_make_tuple2(env, idx_atoms.error, 
+				enif_make_string(env, 
+				  "Arguments are required to be a list of tuples, {Key, Value}",
+				  ERL_NIF_LATIN1));
+		}
+	}
+
+	pState = (idx_state*)enif_alloc_resource(index_type, sizeof(idx_state));
 
 	IndexH handle = Index_Create(props);
-    
-    if (Index_IsValid(handle))
-    {
-	    pState->index = handle;
-	    result = enif_make_resource(env, pState);
-	    enif_release_resource(pState);
 
-	    return enif_make_tuple2(env, idx_atoms.ok, result);
+	if (Index_IsValid(handle))
+	{
+		pState->index = handle;
+		result = enif_make_resource(env, pState);
+		enif_release_resource(pState);
+
+		return enif_make_tuple2(env, idx_atoms.ok, result);
 	}
 	else
-		return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to make a valid index", ERL_NIF_LATIN1));
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, 
+				"Unable to make a valid index", ERL_NIF_LATIN1));
 }
 
 ERL_NIF_TERM 
@@ -117,39 +128,48 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	const ERL_NIF_TERM* min_tuple;
 	const ERL_NIF_TERM* max_tuple;
 	ErlNifBinary bin;
-  	int min_arity, max_arity;
+	int min_arity, max_arity;
 
-    if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
-        return enif_make_badarg(env);
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
 	
-    if (!enif_inspect_binary(env,argv[1], &bin) && (bin.size < MAXBUFLEN))
-     	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse doc id", ERL_NIF_LATIN1));
-     
-     memcpy(pszDocId, bin.data, bin.size);
-     pszDocId[bin.size] = 0;
+	if (!enif_inspect_binary(env,argv[1], &bin) && (bin.size < MAXBUFLEN))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse doc id", ERL_NIF_LATIN1));
 
-    if (!enif_get_tuple(env, argv[2], &min_arity, &min_tuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
+	memcpy(pszDocId, bin.data, bin.size);
+	pszDocId[bin.size] = 0;
 
-    if (!enif_get_tuple(env, argv[3], &max_arity, &max_tuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[2], &min_arity, &min_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
 
- 	if (!(min_arity == max_arity))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "min and max tuple arity needs to be equal", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[3], &max_arity, &max_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
 
-    double mins[min_arity];
-    double maxs[max_arity];
+	if (!(min_arity == max_arity))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "min and max tuple arity needs to be equal", 
+				ERL_NIF_LATIN1));
 
-    if (get_min_max(env, mins, maxs, min_tuple, max_tuple, min_arity) != RT_None)
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "error getting min and max values", ERL_NIF_LATIN1));
+	double mins[min_arity];
+	double maxs[max_arity];
 
-	if (Index_InsertData(pState->index, hash(pszDocId), mins, maxs, min_arity, (uint8_t *)pszDocId, bin.size) != RT_None)
+	if (get_min_max(env, mins, maxs, min_tuple, max_tuple, min_arity)!= RT_None)
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "error getting min and max values", 
+				ERL_NIF_LATIN1));
+
+	if (Index_InsertData(pState->index, hash(pszDocId), mins, maxs, min_arity,
+			(uint8_t *)pszDocId, bin.size) != RT_None)
 	{
 		char buf[MAXBUFLEN];
 		sprintf(buf, "unable to insert document %s into index", pszDocId);
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, buf, ERL_NIF_LATIN1));
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, buf, ERL_NIF_LATIN1));
 
-	}		
+	}
 	else
 		return idx_atoms.ok;
 }
@@ -160,29 +180,37 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	idx_state *pState;
 	const ERL_NIF_TERM* min_tuple;
 	const ERL_NIF_TERM* max_tuple;
-  	int min_arity, max_arity;
-  	uint64_t nResults = 0;
+	int min_arity, max_arity;
+	uint64_t nResults = 0;
 
-    if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
-        return enif_make_badarg(env);
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
 	
-    if (!enif_get_tuple(env, argv[1], &min_arity, &min_tuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[1], &min_arity, &min_tuple))
+		return enif_make_tuple2(env, idx_atoms.error,
+			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
 
-    if (!enif_get_tuple(env, argv[2], &max_arity, &max_tuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[2], &max_arity, &max_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
 
- 	if (!(min_arity == max_arity))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "min and max tuple arity needs to be equal", ERL_NIF_LATIN1));
-	    	
-  	double mins[min_arity];
-    double maxs[max_arity];
+	if (!(min_arity == max_arity))
+		return enif_make_tuple2(env, idx_atoms.error,
+			enif_make_string(env, "min and max tuple arity needs to be equal", 
+			ERL_NIF_LATIN1));
 
-    if (get_min_max(env, mins, maxs, min_tuple, max_tuple, min_arity) != RT_None)
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "error getting min and max values", ERL_NIF_LATIN1));
+	double mins[min_arity];
+	double maxs[max_arity];
 
-	if (Index_Intersects_count(pState->index, mins, maxs, min_arity, &nResults) != RT_None)
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
+	if (get_min_max(env, mins, maxs, min_tuple, max_tuple, min_arity)!= RT_None)
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "error getting min and max values", 
+				ERL_NIF_LATIN1));
+
+	if (Index_Intersects_count(pState->index, mins, 
+								maxs, min_arity, &nResults) != RT_None)
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
 
 	return enif_make_tuple2(env, idx_atoms.ok,  enif_make_uint64(env, nResults));
 }
@@ -193,70 +221,81 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	idx_state *pState;
 	const ERL_NIF_TERM* min_tuple;
 	const ERL_NIF_TERM* max_tuple;
-  	int min_arity, max_arity;
-  	uint64_t nResults;
-  	IndexItemH* items;
-  	ERL_NIF_TERM resultList;
+	int min_arity, max_arity;
+	uint64_t nResults;
+	IndexItemH* items;
+	ERL_NIF_TERM resultList;
 
-    if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
-        return enif_make_badarg(env);
-	
-    if (!enif_get_tuple(env, argv[1], &min_arity, &min_tuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
 
-    if (!enif_get_tuple(env, argv[2], &max_arity, &max_tuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[1], &min_arity, &min_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
 
- 	if (!(min_arity == max_arity))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "min and max tuple arity needs to be equal", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[2], &max_arity, &max_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
 
-  	double mins[min_arity];
-    double maxs[max_arity];
+	if (!(min_arity == max_arity))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "min and max tuple arity needs to be equal",
+								 ERL_NIF_LATIN1));
 
-    if (get_min_max(env, mins, maxs, min_tuple, max_tuple, min_arity) != RT_None)
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "error getting min and max values", ERL_NIF_LATIN1));
+	double mins[min_arity];
+	double maxs[max_arity];
 
-	if (Index_Intersects_obj(pState->index, mins, maxs, min_arity, &items, &nResults) != RT_None)
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
+	if (get_min_max(env, mins, maxs, min_tuple, max_tuple, min_arity)!= RT_None)
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "error getting min and max values", 
+								ERL_NIF_LATIN1));
 
-  	resultList =  enif_make_list(env, 0);
+	if (Index_Intersects_obj(pState->index, mins, maxs,
+							 min_arity, &items, &nResults) != RT_None)
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
 
-    for (int i = 0; i < nResults; i++)
-    {
-    	char* data;
-    	uint64_t len;
-    	IndexItemH item = items[i];
+	resultList = enif_make_list(env, 0);
 
-    	if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
-    	{
-    		ErlNifBinary bin;
-   			if (enif_alloc_binary(len, &bin))
-  			{
-  				memcpy(bin.data, data, len);
-	    		ERL_NIF_TERM head = enif_make_binary(env, &bin);
-	    		resultList = enif_make_list_cell(env, head, resultList);
-    		}
-    		else
-    		{
-	    		free(data);
-	    		IndexItem_Destroy(item);
+	for (int i = 0; i < nResults; i++)
+	{
+		char* data;
+		uint64_t len;
+		IndexItemH item = items[i];
+
+		if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
+		{
+			ErlNifBinary bin;
+			if (enif_alloc_binary(len, &bin))
+			{
+				memcpy(bin.data, data, len);
+				ERL_NIF_TERM head = enif_make_binary(env, &bin);
+				resultList = enif_make_list_cell(env, head, resultList);
+			}
+			else
+			{
+				free(data);
+				IndexItem_Destroy(item);
 				char buf[MAXBUFLEN];
 				data[len] = 0;
 				sprintf(buf, "unable to assign doc id %s to erlang term", data);
-	   			return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, buf, ERL_NIF_LATIN1));
-    		}
- 
-    		free(data);
-    		IndexItem_Destroy(item);
+				return enif_make_tuple2(env, idx_atoms.error, 
+					enif_make_string(env, buf, ERL_NIF_LATIN1));
+			}
 
-    	}
-    	else
-    	{
-   			return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
-    	}
-    }
+			free(data);
+			IndexItem_Destroy(item);
 
-    return enif_make_tuple2(env, idx_atoms.ok, resultList);;
+		}
+		else
+		{
+			return enif_make_tuple2(env, idx_atoms.error, 
+				enif_make_string(env, "unable to execute query", 
+					ERL_NIF_LATIN1));
+		}
+	}
+
+	return enif_make_tuple2(env, idx_atoms.ok, resultList);;
 }
 
 ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -266,30 +305,34 @@ ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	const ERL_NIF_TERM* minTuple;
 	const ERL_NIF_TERM* maxTuple;
 	ErlNifBinary bin;
-  	int minArity, maxArity;
+	int minArity, maxArity;
  
-    if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
-        return enif_make_badarg(env);
-	
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
 
-    if (!enif_inspect_binary(env,argv[1], &bin) && (bin.size < MAXBUFLEN))
-     	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse doc id", ERL_NIF_LATIN1));
-     
-     memcpy(pszDocId, bin.data, bin.size);
-     pszDocId[bin.size] = 0;
+	if (!enif_inspect_binary(env,argv[1], &bin) && (bin.size < MAXBUFLEN))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse doc id", ERL_NIF_LATIN1));
 
-    if (!enif_get_tuple(env, argv[2], &minArity, &minTuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
+	memcpy(pszDocId, bin.data, bin.size);
+	pszDocId[bin.size] = 0;
 
-    if (!enif_get_tuple(env, argv[3], &maxArity, &maxTuple))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[2], &minArity, &minTuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
 
- 	if (!(minArity == maxArity))
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, "min and max tuple arity needs to be equal", ERL_NIF_LATIN1));
+	if (!enif_get_tuple(env, argv[3], &maxArity, &maxTuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
 
-    double mins[minArity];
-    double maxs[maxArity];
-	    	
+	if (!(minArity == maxArity))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "min and max tuple arity needs to be equal", 
+				ERL_NIF_LATIN1));
+
+	double mins[minArity];
+	double maxs[maxArity];
+
 	for (int i = 0; i < minArity; i++)
 	{
 		double d1, d2;
@@ -309,13 +352,15 @@ ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		}
 		else
 			maxs[i] = d2;
-	}  	
+	}
 
-	if (Index_DeleteData(pState->index, hash(pszDocId), mins, maxs, minArity) != RT_None)
+	if (Index_DeleteData(pState->index, hash(pszDocId), mins, 
+			maxs, minArity) != RT_None)
 	{
 		char buf[MAXBUFLEN];
 		sprintf(buf, "unable to delete document %s from index", pszDocId);
-    	return enif_make_tuple2(env, idx_atoms.error, enif_make_string(env, buf, ERL_NIF_LATIN1));
+		return enif_make_tuple2(env, idx_atoms.error, 
+					enif_make_string(env, buf, ERL_NIF_LATIN1));
 	}		
 	else
 		return idx_atoms.ok;
@@ -486,27 +531,28 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPrope
 			else result = RT_Failure;	
 			break;
 		case FileName:
-		    char szFileName[MAXBUFLEN];
-		    if (enif_get_string(env, term, szFileName, MAXBUFLEN, ERL_NIF_LATIN1))
-		    {
+			char szFileName[MAXBUFLEN];
+			if (enif_get_string(env, term, szFileName, MAXBUFLEN, 
+									ERL_NIF_LATIN1))
+			{
 				IndexProperty_SetFileName(props, szFileName);
-		    }
+			}
 			else result = RT_Failure;	
 			break;
 		case FileNameExtDat:
-		    char szExtDat[MAXBUFLEN];
-		    if (enif_get_string(env, term, szExtDat, MAXBUFLEN, ERL_NIF_LATIN1))
-		    {
+			char szExtDat[MAXBUFLEN];
+			if (enif_get_string(env, term, szExtDat, MAXBUFLEN, ERL_NIF_LATIN1))
+			{
 				IndexProperty_SetFileNameExtensionDat(props, szExtDat);
-		    }
+			}
 			else result = RT_Failure;	
 			break;
 		case FileNameExtIdx:
-		    char szExtIdx[MAXBUFLEN];
-		    if (enif_get_string(env, term, szExtIdx, MAXBUFLEN, ERL_NIF_LATIN1))
-		    {
+			char szExtIdx[MAXBUFLEN];
+			if (enif_get_string(env, term, szExtIdx, MAXBUFLEN, ERL_NIF_LATIN1))
+			{
 				IndexProperty_SetFileNameExtensionIdx(props, szExtIdx);
-		    }
+			}
 			else result = RT_Failure;	
 			break;
 		case IndexId:
@@ -525,7 +571,8 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPrope
 }
 
 int
-get_min_max(ErlNifEnv* env, double* mins, double* maxs, const ERL_NIF_TERM* min_tuple, const ERL_NIF_TERM* max_tuple, int dims)
+get_min_max(ErlNifEnv* env, double* mins, double* maxs,
+	 const ERL_NIF_TERM* min_tuple, const ERL_NIF_TERM* max_tuple, int dims)
 {
 	for (int i = 0; i < dims; i++)
 	{
@@ -560,11 +607,11 @@ get_min_max(ErlNifEnv* env, double* mins, double* maxs, const ERL_NIF_TERM* min_
 int64_t 
 hash(const char* szVal)
 {
-    int64_t h = 0;
-    while (*szVal)
-       h = h << 1 ^ *szVal++;
+	int64_t h = 0;
+	while (*szVal)
+		h = h << 1 ^ *szVal++;
 
-    return h;
+	return h;
 }
 
 void

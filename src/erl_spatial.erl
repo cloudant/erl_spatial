@@ -4,7 +4,9 @@
 
 -on_load(init/0).
 
--export([index_create/0, index_create/1, index_insert/4, index_intersects_count/3, index_intersects/3, index_delete/4, sidx_version/0]).
+-export([index_create/0, index_create/1, index_insert/4, 
+			index_intersects_count/3, index_intersects/3,
+			index_delete/4, sidx_version/0]).
 
 index_create() ->
 	index_create([{?IDX_STORAGE, ?IDX_MEMORY}]).
@@ -37,12 +39,12 @@ sidx_version() ->
 %% on_load callback
 %% -------------------------------------------------------------------------
 init() ->
-    PrivDir = case code:priv_dir(?MODULE) of
-        {error, _} ->
-            EbinDir = filename:dirname(code:which(?MODULE)),
-            AppPath = filename:dirname(EbinDir),
-            filename:join(AppPath, "priv");
-        Path ->
-            Path
-    end,
-    erlang:load_nif(filename:join(PrivDir, "erl_spatial"), 0).
+	PrivDir = case code:priv_dir(?MODULE) of
+		{error, _} ->
+			EbinDir = filename:dirname(code:which(?MODULE)),
+			AppPath = filename:dirname(EbinDir),
+			filename:join(AppPath, "priv");
+		Path ->
+			Path
+	end,
+	erlang:load_nif(filename:join(PrivDir, "erl_spatial"), 0).
