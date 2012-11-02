@@ -128,17 +128,25 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	const ERL_NIF_TERM* min_tuple;
 	const ERL_NIF_TERM* max_tuple;
 	ErlNifBinary bin;
-	int min_arity, max_arity;
+	int min_arity, max_arity, len;
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
 	
-	if (!enif_inspect_binary(env,argv[1], &bin) && (bin.size < MAXBUFLEN))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "Unable to parse doc id", ERL_NIF_LATIN1));
-
-	memcpy(pszDocId, bin.data, bin.size);
-	pszDocId[bin.size] = 0;
+	if (enif_inspect_binary(env, argv[1], &bin) && (bin.size < MAXBUFLEN))
+	{
+		memcpy(pszDocId, bin.data, bin.size);
+		pszDocId[bin.size] = 0;
+		len = bin.size;		
+	}
+	else
+	{
+		if (!(len = enif_get_string(env, argv[1], pszDocId, MAXBUFLEN, 
+						ERL_NIF_LATIN1)) > 0)
+			return enif_make_tuple2(env, idx_atoms.error, 
+			  enif_make_string(env, "Unable to parse doc id, wrong format \
+			  							or too long", ERL_NIF_LATIN1));
+	}
 
 	if (!enif_get_tuple(env, argv[2], &min_arity, &min_tuple))
 		return enif_make_tuple2(env, idx_atoms.error, 
@@ -162,7 +170,7 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				ERL_NIF_LATIN1));
 
 	if (Index_InsertData(pState->index, hash(pszDocId), mins, maxs, min_arity,
-			(uint8_t *)pszDocId, bin.size) != RT_None)
+			(uint8_t *)pszDocId, len) != RT_None)
 	{
 		char buf[MAXBUFLEN];
 		sprintf(buf, "unable to insert document %s into index", pszDocId);
@@ -310,12 +318,22 @@ ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
 
-	if (!enif_inspect_binary(env,argv[1], &bin) && (bin.size < MAXBUFLEN))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "Unable to parse doc id", ERL_NIF_LATIN1));
-
-	memcpy(pszDocId, bin.data, bin.size);
-	pszDocId[bin.size] = 0;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+	
+	if (enif_inspect_binary(env, argv[1], &bin) && (bin.size < MAXBUFLEN))
+	{
+		memcpy(pszDocId, bin.data, bin.size);
+		pszDocId[bin.size] = 0;
+	}
+	else
+	{
+		if (enif_get_string(env, argv[1], pszDocId, MAXBUFLEN, 
+														ERL_NIF_LATIN1) <= 0)
+			return enif_make_tuple2(env, idx_atoms.error, 
+			  enif_make_string(env, "Unable to parse doc id, wrong format \
+			  							or too long", ERL_NIF_LATIN1));
+	}
 
 	if (!enif_get_tuple(env, argv[2], &minArity, &minTuple))
 		return enif_make_tuple2(env, idx_atoms.error, 
@@ -374,7 +392,8 @@ sidx_version(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	return enif_make_string(env, SIDX_Version(), ERL_NIF_LATIN1);
 }
 
-RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPropertyH props)
+RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, 
+														IndexPropertyH props)
 {
 	int v = 0;
 	uint32_t uv = 0;
@@ -533,7 +552,7 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPrope
 		case FileName:
 			char szFileName[MAXBUFLEN];
 			if (enif_get_string(env, term, szFileName, MAXBUFLEN, 
-									ERL_NIF_LATIN1))
+									ERL_NIF_LATIN1) > 0)
 			{
 				IndexProperty_SetFileName(props, szFileName);
 			}
@@ -541,7 +560,8 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPrope
 			break;
 		case FileNameExtDat:
 			char szExtDat[MAXBUFLEN];
-			if (enif_get_string(env, term, szExtDat, MAXBUFLEN, ERL_NIF_LATIN1))
+			if (enif_get_string(env, term, szExtDat, MAXBUFLEN, 
+									ERL_NIF_LATIN1)  > 0)
 			{
 				IndexProperty_SetFileNameExtensionDat(props, szExtDat);
 			}
@@ -549,7 +569,8 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term, IndexPrope
 			break;
 		case FileNameExtIdx:
 			char szExtIdx[MAXBUFLEN];
-			if (enif_get_string(env, term, szExtIdx, MAXBUFLEN, ERL_NIF_LATIN1))
+			if (enif_get_string(env, term, szExtIdx, MAXBUFLEN,
+									 ERL_NIF_LATIN1)  > 0)
 			{
 				IndexProperty_SetFileNameExtensionIdx(props, szExtIdx);
 			}

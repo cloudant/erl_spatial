@@ -14,9 +14,6 @@ index_create() ->
 index_create(_Props) ->
 	erlang:nif_error(not_loaded).
 
-index_insert(Idx, Id, Min, Max) when is_list(Id) ->
-	index_insert(Idx, list_to_binary(Id), Min, Max);
-
 index_insert(_Idx, _Id, _Min, _Max) ->
 	erlang:nif_error(not_loaded).	
 
@@ -26,14 +23,11 @@ index_intersects_count(_Idx, _Min, _Max) ->
 index_intersects(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
-index_delete(Idx, Id, Min, Max) when is_list(Id) ->
-	index_delete(Idx, list_to_binary(Id), Min, Max);
-
 index_delete(_Idx, _Id,  _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
 sidx_version() ->
-	erlang:nif_error(not_loaded).	
+	erlang:nif_error(not_loaded).
 
 %% -------------------------------------------------------------------------
 %% on_load callback
