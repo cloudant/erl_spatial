@@ -1,3 +1,4 @@
+// Copyright 2012 Cloudant
 #include "erl_spatial.h"
 
 // static int

@@ -134,7 +134,7 @@ intersect_test() ->
 	D3 = timer:now_diff(T6, T5),
 	% disk based intersection on MBA with item wrapper (required for couch)
 	% python ctypes result 4653.50 usec
-	% erlang result  usec
+	% erlang result  ~ 275 usec
 	?debugFmt("~nDisk based intersection: hits ~p, ~p usec ~n",
 		[length(DiskHits), D3]),
 	?assert(D3 =< 4653.50),

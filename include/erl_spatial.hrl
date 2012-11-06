@@ -1,3 +1,5 @@
+%% Copyright 2012 Cloudant
+
 % Index Properties
 -define(IDX_INDEXTYPE, 0).
 -define(IDX_DIMENSION, 1).

@@ -1,3 +1,4 @@
+// Copyright 2012 Cloudant
 #include "erl_nif.h"
 
 typedef enum

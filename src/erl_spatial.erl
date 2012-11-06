@@ -1,3 +1,4 @@
+%% Copyright 2012 Cloudant
 -module(erl_spatial).
 
 -include("erl_spatial.hrl").
