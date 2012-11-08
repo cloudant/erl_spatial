@@ -14,23 +14,25 @@ index_test() ->
 	Min = {0, 0},
 	Max = {1, 1},
 	DocId = <<"test">>,
+	Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
 
-	{ok, Idx} = erl_spatial:index_create(),
-	?assertEqual(ok, erl_spatial:index_insert(Idx, DocId, Min, Max)),
+	{ok, Idx} = erl_spatial:index_create(),	
+	?assertEqual(ok, erl_spatial:index_insert(Idx, DocId, Pt)),
 
-	% check we hit and then check the intersection for the original
-	?assertEqual({ok, 1}, erl_spatial:index_intersects_count(Idx, Min, Max)),
-	?assertEqual({ok, [DocId]}, erl_spatial:index_intersects(Idx, Min, Max)),
+ 	% check we hit and then check the intersection for the original
+ 	?assertEqual({ok, 1}, erl_spatial:index_intersects_count(Idx, Min, Max)),
+ 	?assertEqual({ok, [DocId]}, erl_spatial:index_intersects(Idx, Min, Max)),
 
 	% check the misses
 	?assertEqual({ok, 0}, 
 		erl_spatial:index_intersects_count(Idx, {2, 2}, {3, 3})),
 
 	% clean up
-	?assertEqual(ok, erl_spatial:index_delete(Idx, DocId, Min, Max)),
+	?assertEqual(ok, erl_spatial:index_delete(Idx, DocId, Pt)),
 	?assertEqual({ok, 0}, erl_spatial:index_intersects_count(Idx, Min, Max)).
 
 % benchmarks - tests to make sure everything is going faster enough
+%  The python benchmarks don't use wkb_writer or geos
 % loosely copied from the python r-tree wrapper on libspatialindex
 % hobu's latest results on his 2006-era machine
 
@@ -43,7 +45,6 @@ index_test() ->
 % 30000 points
 % Query box:  (1240000, 1010000, 1400000, 1390000)
 
- 
 % Brute Force:
 % 46 hits
 % 13533.60 usec/pass
@@ -66,87 +67,75 @@ insert_test() ->
 	{ok, Idx} = erl_spatial:index_create(),
 	
 	T1 = erlang:now(),
-	lists:foreach(fun({Id, X, Y}) ->
-			erl_spatial:index_insert(Idx, Id,
-					{X, Y}, {X, Y})
+	lists:foreach(fun({Id, JSON}) ->
+			erl_spatial:index_insert(Idx, Id, JSON)
 		end, Coords
 	),
 	T2 = erlang:now(),
 	Diff = timer:now_diff(T2, T1),
 	% one at a time load value on MBA 
 	% python ctypes result 395900.50 
-	% erlang result ~ 85507
+	% erlang result ~ 107102
 	?debugFmt("~nOne-at-a-time load: ~p usec~n", [Diff]),
 	?assert(Diff =< 527883.95).
 
 
-intersect_test() ->
-	Coords = create_test_list([], 0, ?COUNT),
-	{ok, Idx} = erl_spatial:index_create(),
-	{ok, DiskIdx} = erl_spatial:index_create([{?IDX_FILENAME, "/tmp/test"}]),
-	lists:foreach(fun({Id, X, Y}) ->
-			erl_spatial:index_insert(Idx, Id,
-					{X, Y}, {X, Y}),
-			erl_spatial:index_insert(DiskIdx, Id,
-					{X, Y}, {X, Y})
-		end, Coords
-	),
+intersect_test_() ->
+	{timeout, 60,
+	fun() ->
+		Coords = create_test_list([], 0, ?COUNT),
+		{ok, Idx} = erl_spatial:index_create(),
+		{ok, DiskIdx} = erl_spatial:index_create([{?IDX_FILENAME, 
+													"/tmp/test"}]),
+		lists:foreach(fun({Id, JSON}) ->
+				erl_spatial:index_insert(Idx, Id, JSON),
+				erl_spatial:index_insert(DiskIdx, Id, JSON)
+			end, Coords
+		),
 
-	MinX = 1240000,
-	MinY = 1010000,
-	MaxX = 1400000,
-	MaxY = 1390000,
-	% brute force intersection
-	T1 = erlang:now(),
-	Hits = lists:filter(fun({Id, X, Y}) ->
-		case ((X >= MinX) and (X =< MaxX)) of 
-			true ->
-				((Y >= MinY) and (Y =< MaxY));
-			_ ->
-				false
-		end
-	end, Coords),
-	T2 = erlang:now(),
-	D1 = timer:now_diff(T2, T1),
-	% brute force intersection on MBA 
-	% python ctypes result 13844.16 usec
-	% erlang result ~ 2859 usec
-	?debugFmt("~nBrute force : hits ~p, ~p usec ~n", [length(Hits), D1]),
-	?assert(D1 =< 13533.60),
+		MinX = 1240000,
+		MinY = 1010000,
+		MaxX = 1400000,
+		MaxY = 1390000,
 
-	% use the index
-	% memory based index
-	T3 = erlang:now(),
-	{ok, MemHits} = erl_spatial:index_intersects(Idx, {MinX, MinY}, {MaxX, MaxY}),
-	T4 = erlang:now(),
-	D2 = timer:now_diff(T4, T3),
-	% memory based intersection on MBA
-	% python ctypes result 4929.33 usec
-	% erlang result ~ 204 usec
-	?debugFmt("~nMemory based intersection: hits ~p, ~p usec~n",
-		[length(MemHits), D2]),
-	?assert(D2 =< 7516.19),
+		% memory based index
+		T3 = erlang:now(),
+		{ok, MemHits} = erl_spatial:index_intersects(Idx, {MinX, MinY}, 
+														{MaxX, MaxY}),
+		T4 = erlang:now(),
+		D2 = timer:now_diff(T4, T3),
+		% memory based intersection on MBA
+		% python ctypes result 4929.33 usec
+		% erlang result ~ 178 usec
+		?debugFmt("~nMemory based intersection: hits ~p, ~p usec~n",
+			[length(MemHits), D2]),
+		?assert(D2 =< 7516.19),
 
-	% run same test on a disk index
-	T5 = erlang:now(),
-	{ok, DiskHits} = erl_spatial:index_intersects(DiskIdx, {MinX, MinY}, {MaxX, MaxY}),
-	T6 = erlang:now(),
-	D3 = timer:now_diff(T6, T5),
-	% disk based intersection on MBA with item wrapper (required for couch)
-	% python ctypes result 4653.50 usec
-	% erlang result  ~ 275 usec
-	?debugFmt("~nDisk based intersection: hits ~p, ~p usec ~n",
-		[length(DiskHits), D3]),
-	?assert(D3 =< 4653.50),
-	% cleanup
-	?assertEqual(ok, file:delete("/tmp/test.dat")),
-	?assertEqual(ok, file:delete("/tmp/test.idx")).
+		% run same test on a disk index
+		T5 = erlang:now(),
+		{ok, DiskHits} = erl_spatial:index_intersects(DiskIdx, {MinX, MinY}, 
+														{MaxX, MaxY}),
+		T6 = erlang:now(),
+		D3 = timer:now_diff(T6, T5),
+		% disk based intersection on MBA with item wrapper (required for couch)
+		% python ctypes result 4653.50 usec
+		% erlang result  ~ 409 usec
+		?debugFmt("~nDisk based intersection: hits ~p, ~p usec ~n",
+			[length(DiskHits), D3]),
+		?assert(D3 =< 4653.50),
+		% cleanup
+		?assertEqual(ok, file:delete("/tmp/test.dat")),
+		?assertEqual(ok, file:delete("/tmp/test.idx"))
+	end}.
 
 create_test_list(Acc, Cntr, Max) when Cntr == Max ->
 	Acc;
 
-create_test_list(Acc, Cntr, Max) ->
-	Pt = {list_to_binary(integer_to_list(Cntr)),
-			random:uniform(?BOUND), random:uniform(?BOUND)},
+create_test_list(Acc, Cntr, Max) ->	
+	X = random:uniform(?BOUND) * 1.0,
+	Y = random:uniform(?BOUND) * 1.0,
+    JSON = io_lib:format("{\"type\":\"Point\",\"coordinates\":[~f, ~f]}",
+    	[X,Y]),
+	Pt = {list_to_binary(integer_to_list(Cntr)), JSON},
 	create_test_list([Pt |Acc],
 		 Cntr + 1, Max).

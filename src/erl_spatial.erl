@@ -5,9 +5,9 @@
 
 -on_load(init/0).
 
--export([index_create/0, index_create/1, index_insert/4, 
+-export([index_create/0, index_create/1, index_insert/3, index_insert/4,
 			index_intersects_count/3, index_intersects/3,
-			index_delete/4, sidx_version/0]).
+			index_delete/3, index_delete/4, sidx_version/0, geos_version/0]).
 
 index_create() ->
 	index_create([{?IDX_STORAGE, ?IDX_MEMORY}]).
@@ -15,21 +15,31 @@ index_create() ->
 index_create(_Props) ->
 	erlang:nif_error(not_loaded).
 
-index_insert(_Idx, _Id, _Min, _Max) ->
-	erlang:nif_error(not_loaded).	
-
 index_intersects_count(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
 index_intersects(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
-index_delete(_Idx, _Id,  _Min, _Max) ->
-	erlang:nif_error(not_loaded).
-
 sidx_version() ->
 	erlang:nif_error(not_loaded).
 
+geos_version() ->
+	erlang:nif_error(not_loaded).
+
+index_insert(Idx, Id, Json) ->
+	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
+	index_insert(Idx, Id, WKB, nif).
+
+index_insert(_Idx, _Id, _Data, nif) ->
+	erlang:nif_error(not_loaded).	
+
+index_delete(Idx, Id, Json) ->
+	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
+	index_delete(Idx, Id, WKB, nif).
+
+index_delete(_Idx, _Id, _Data, nif) ->
+	erlang:nif_error(not_loaded).
 %% -------------------------------------------------------------------------
 %% on_load callback
 %% -------------------------------------------------------------------------

@@ -5,7 +5,7 @@ clean:
 	@./rebar clean
 
 test:
-	@./rebar eunit
+	@./rebar eunit skip_deps=true
 
 doc:
 	@./rebar doc
