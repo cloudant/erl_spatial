@@ -5,7 +5,8 @@
 
 -on_load(init/0).
 
--export([index_create/0, index_create/1, index_insert/3, index_insert/4,
+-export([index_create/0, index_create/1, index_create/2, 
+			index_insert/3, index_insert/4,
 			index_intersects_count/3, index_intersects/3,
 			index_delete/3, index_delete/4, sidx_version/0, geos_version/0]).
 
@@ -14,6 +15,13 @@ index_create() ->
 
 index_create(_Props) ->
 	erlang:nif_error(not_loaded).
+
+index_create(FileName, CRS) is_binary(FileName) ->
+	index_create(binary_to_list(FileName), CRS);
+
+index_create(FileName, CRS) ->
+	% TODO include CRS to support on the fly reprojection
+	index_create([{?IDX_FILENAME, FileName}]).
 
 index_intersects_count(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
