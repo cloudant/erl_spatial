@@ -16,10 +16,10 @@ index_create() ->
 index_create(_Props) ->
 	erlang:nif_error(not_loaded).
 
-index_create(FileName, CRS) is_binary(FileName) ->
+index_create(FileName, CRS) when is_binary(FileName) ->
 	index_create(binary_to_list(FileName), CRS);
 
-index_create(FileName, CRS) ->
+index_create(FileName, _CRS) ->
 	% TODO include CRS to support on the fly reprojection
 	index_create([{?IDX_FILENAME, FileName}]).
 
