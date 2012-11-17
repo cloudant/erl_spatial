@@ -40,11 +40,15 @@ void
 idx_state_dtor(ErlNifEnv* env, void* obj);
 
 int
+get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs, 
+	double* const mins, double* const maxs, int dims, int n);
+
+int
 get_min_max_tuple(ErlNifEnv* env, double* mins, double* maxs, 
 	const ERL_NIF_TERM* min_tuple, const ERL_NIF_TERM* max_tuple, int dims);
 
 int
-get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* mbr,
+get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom,
 	double* const mins, double* const maxs, int dims);
 
 int64_t 
@@ -182,22 +186,19 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				enif_make_string(env, 
 				"Unable to parse Id", ERL_NIF_LATIN1));
 
-	// get wkb data and calculate min and max from MBR
+	// get wkb data and calculate min and max from geom
 	if (enif_inspect_binary(env, argv[2], &wkb) &&
 		(geom = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
 			wkb.data, wkb.size)) != NULL)
 	{
-		GEOSGeometry* mbr;
 		double* mins;
 		double* maxs;
 		unsigned char* pData;
 
-		mbr = GEOSEnvelope_r(pState->geosCtx, geom); // mbr is a polygon
-		dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, mbr);
+		dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, geom);
 		mins = (double*)malloc(dims * sizeof(double));
 		maxs = (double*)malloc(dims * sizeof(double));
-
-		get_min_max(pState->geosCtx, mbr, mins, maxs, dims);
+		get_min_max(pState->geosCtx, geom, mins, maxs, dims);
 
 		// doc id is null terminated join wkb data and doc id together
 		pData = (unsigned char*)malloc(wkb.size + doc_len);
@@ -216,7 +217,6 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			free(pData);
 			free(pszDocId);
 			GEOSGeom_destroy_r(pState->geosCtx, geom);
-			GEOSGeom_destroy_r(pState->geosCtx, mbr);
 			sprintf(buf, "unable to insert document %s into index", pszDocId);
 			return enif_make_tuple2(env, idx_atoms.error, 
 				enif_make_string(env, buf, ERL_NIF_LATIN1));
@@ -227,7 +227,6 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		free(pData);
 		free(pszDocId);
 		GEOSGeom_destroy_r(pState->geosCtx, geom);
-		GEOSGeom_destroy_r(pState->geosCtx, mbr);
 		return idx_atoms.ok;
 	}
 	else
@@ -369,6 +368,42 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	return enif_make_tuple2(env, idx_atoms.ok, resultList);;
 }
 
+ERL_NIF_TERM index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	uint32_t dims;
+	double* pMins;
+	double* pMaxs;
+	ERL_NIF_TERM* pErlMins;
+	ERL_NIF_TERM* pErlMaxs;
+	ERL_NIF_TERM minTuple, maxTuple;
+
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+
+	Index_GetBounds(pState->index, &pMins, &pMaxs, &dims);
+
+	pErlMins = (ERL_NIF_TERM*)malloc(dims * sizeof(ERL_NIF_TERM));
+	pErlMaxs = (ERL_NIF_TERM*)malloc(dims * sizeof(ERL_NIF_TERM));
+
+	for (int i = 0; i < dims; i++)
+	{
+		pErlMins[i] = enif_make_double(env, pMins[i]);
+		pErlMaxs[i] = enif_make_double(env, pMaxs[i]);
+	}
+
+	minTuple = enif_make_tuple_from_array(env, pErlMins, dims);
+	maxTuple = enif_make_tuple_from_array(env, pErlMaxs, dims);
+	ERL_NIF_TERM lst = enif_make_list2(env, minTuple, maxTuple);
+
+	free(pMins);
+	free(pMaxs);
+	free(pErlMins);
+	free(pErlMaxs);
+
+	return enif_make_tuple2(env, idx_atoms.ok, lst);
+}
+
 ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
@@ -391,21 +426,19 @@ ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				enif_make_string(env, 
 				"Unable to parse Id", ERL_NIF_LATIN1));
 
-	// get wkb data and calculate min and max from MBR
+	// get wkb data and calculate min and max from geom
 	if (enif_inspect_binary(env, argv[2], &wkb) &&
 		(geom = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
 			wkb.data, wkb.size)) != NULL)
 	{
-		GEOSGeometry* mbr;
 		double* mins;
 		double* maxs;
 
-		mbr = GEOSEnvelope_r(pState->geosCtx, geom); // mbr is a polygon
-		dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, mbr);
+		dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, geom);
 		mins = (double*)malloc(dims * sizeof(double));
 		maxs = (double*)malloc(dims * sizeof(double));
 
-		get_min_max(pState->geosCtx, mbr, mins, maxs, dims);
+		get_min_max(pState->geosCtx, geom, mins, maxs, dims);
 
 		if (Index_DeleteData(pState->index, hash(pszDocId), mins,
 				maxs, dims) != RT_None)
@@ -416,7 +449,6 @@ ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			free(maxs);
 			free(pszDocId);
 			GEOSGeom_destroy_r(pState->geosCtx, geom);
-			GEOSGeom_destroy_r(pState->geosCtx, mbr);
 
 			sprintf(buf, "unable to delete document %s from index", pszDocId);
 			return enif_make_tuple2(env, idx_atoms.error, 
@@ -429,7 +461,6 @@ ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			free(maxs);
 			free(pszDocId);
 			GEOSGeom_destroy_r(pState->geosCtx, geom);
-			GEOSGeom_destroy_r(pState->geosCtx, mbr);
 
 			return idx_atoms.ok;
 		}
@@ -655,40 +686,129 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term,
 }
 
 int
-get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* mbr,
-	double* const mins, double* const maxs, int arity)
+get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom,
+	double* const mins, double* const maxs, int dims)
 {
-	int n;
-	const GEOSCoordSequence *cs;
-	
-	if (GEOSisValid_r(geosCtx, mbr) == 1)
-	{
-		// loop mbr to find min and max
-		n = GEOSGetNumCoordinates_r(geosCtx, mbr);
-		cs = GEOSGeom_getCoordSeq_r(geosCtx, mbr);
+	int n, ngeoms, type; 
+	int result = RT_None;
+	const GEOSCoordSequence* cs;
+	const GEOSGeometry* g;
 
-		for (int i = 0; i < arity; i++)
+	if ((GEOSisValid_r(geosCtx, geom) == 1) && 
+			!(GEOSisEmpty_r(geosCtx, geom)))
+	{
+		type = GEOSGeomTypeId_r(geosCtx, geom) ;
+
+		switch (type)
+ 		{ 
+        case GEOS_POINT:
+        case GEOS_LINESTRING:
+        case GEOS_LINEARRING:
+			cs = GEOSGeom_getCoordSeq_r(geosCtx, geom);
+			n = GEOSGetNumCoordinates_r(geosCtx, geom);
+			result = get_min_max_seq(geosCtx, cs, mins, maxs, dims, n);
+			break;
+		case GEOS_POLYGON:
+			g = GEOSGetExteriorRing_r(geosCtx, geom);
+            cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
+			n = GEOSGetNumCoordinates_r(geosCtx, g);
+			result = get_min_max_seq(geosCtx, cs, mins, maxs, dims, n);
+			break;
+         case GEOS_MULTIPOINT:
+         case GEOS_MULTILINESTRING:
+         case GEOS_MULTIPOLYGON:
+         case GEOS_GEOMETRYCOLLECTION:
+             ngeoms = GEOSGetNumGeometries_r(geosCtx, geom);
+             if (ngeoms)
+             {
+             	double new_mins[dims];
+             	double new_maxs[dims];
+
+             	g = GEOSGetGeometryN_r(geosCtx, geom, 0);
+				cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
+				n = GEOSGetNumCoordinates_r(geosCtx, g);
+				if (get_min_max_seq(geosCtx, cs, mins, maxs, dims, n))
+				{
+
+					for (int i = 1; i < ngeoms; i++)
+					{
+						g = GEOSGetGeometryN_r(geosCtx, geom, i);
+						cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
+						n = GEOSGetNumCoordinates_r(geosCtx, g);
+						if (get_min_max_seq(geosCtx, cs, new_mins, 
+							new_maxs, dims, n))
+						{
+							for (int j = 0; j < dims; j++)
+							{
+								if (new_mins[j] < mins[j])
+									mins[j] = new_mins[j];
+
+								if (new_maxs[j] < maxs[j])
+									maxs[j] = new_maxs[j];
+							}
+						}
+						else
+						{
+							result = RT_Failure;
+							break;
+						}
+					}
+					result = RT_None;
+				}
+				else
+					result = RT_Failure;
+             }
+             else
+             	result = RT_Failure;
+             break;
+         default:
+         	result = RT_Failure;
+         }
+	}
+	return result;
+}
+
+int
+get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs, 
+	double* const mins, double* const maxs, int dims, int n)
+{
+	int result = RT_None;
+
+	for (int i = 0; i < dims; i++)
+	{
+		double v;
+
+		if (GEOSCoordSeq_getOrdinate_r(geosCtx, cs, 0, i, &v))
 		{
-			double v;
-			// initialise min and maxs
-			GEOSCoordSeq_getOrdinate_r(geosCtx, cs, 0, i, &v);
 			mins[i] = v;
 			maxs[i] = v;
 
 			for (int j = 1; j < n; j++)
 			{
-				GEOSCoordSeq_getOrdinate_r(geosCtx, cs, 0, i, &v);
-				if (v > maxs[i])
-					maxs[i] = v;
+				if (GEOSCoordSeq_getOrdinate_r(geosCtx, cs, j, i, &v))
+				{
+					if (v > maxs[i])
+						maxs[i] = v;
 
-				if (v < mins[i])
-					mins[i] = v;
+					if (v < mins[i])
+						mins[i] = v;
+				}
+				else
+				{
+					result = RT_Failure;
+					break;
+				}
 			}
 		}
-		return RT_None;
+		else
+		{
+			result = RT_Failure;
+			break;
+		}
 	}
-	else return RT_Failure;
+	return result;
 }
+
 
 int
 get_min_max_tuple(ErlNifEnv* env, double* mins, double* maxs,
