@@ -689,83 +689,30 @@ int
 get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom,
 	double* const mins, double* const maxs, int dims)
 {
-	int n, ngeoms, type; 
-	int result = RT_None;
+	int n, type; 
 	const GEOSCoordSequence* cs;
+	const GEOSGeometry* env;
 	const GEOSGeometry* g;
 
 	if ((GEOSisValid_r(geosCtx, geom) == 1) && 
 			!(GEOSisEmpty_r(geosCtx, geom)))
 	{
-		type = GEOSGeomTypeId_r(geosCtx, geom) ;
-
-		switch (type)
- 		{ 
-        case GEOS_POINT:
-        case GEOS_LINESTRING:
-        case GEOS_LINEARRING:
+		env = GEOSEnvelope_r(geosCtx, geom);
+		type = GEOSGeomTypeId_r(geosCtx, env);
+		switch(type)
+		{
+		case GEOS_POINT:
 			cs = GEOSGeom_getCoordSeq_r(geosCtx, geom);
-			n = GEOSGetNumCoordinates_r(geosCtx, geom);
-			result = get_min_max_seq(geosCtx, cs, mins, maxs, dims, n);
-			break;
-		case GEOS_POLYGON:
-			g = GEOSGetExteriorRing_r(geosCtx, geom);
-            cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
+			return get_min_max_seq(geosCtx, cs, mins, maxs, dims, 1);
+		default:
+			g = GEOSGetExteriorRing_r(geosCtx, env);
+			cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
 			n = GEOSGetNumCoordinates_r(geosCtx, g);
-			result = get_min_max_seq(geosCtx, cs, mins, maxs, dims, n);
-			break;
-         case GEOS_MULTIPOINT:
-         case GEOS_MULTILINESTRING:
-         case GEOS_MULTIPOLYGON:
-         case GEOS_GEOMETRYCOLLECTION:
-             ngeoms = GEOSGetNumGeometries_r(geosCtx, geom);
-             if (ngeoms)
-             {
-             	double new_mins[dims];
-             	double new_maxs[dims];
-
-             	g = GEOSGetGeometryN_r(geosCtx, geom, 0);
-				cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
-				n = GEOSGetNumCoordinates_r(geosCtx, g);
-				if (get_min_max_seq(geosCtx, cs, mins, maxs, dims, n))
-				{
-
-					for (int i = 1; i < ngeoms; i++)
-					{
-						g = GEOSGetGeometryN_r(geosCtx, geom, i);
-						cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
-						n = GEOSGetNumCoordinates_r(geosCtx, g);
-						if (get_min_max_seq(geosCtx, cs, new_mins, 
-							new_maxs, dims, n))
-						{
-							for (int j = 0; j < dims; j++)
-							{
-								if (new_mins[j] < mins[j])
-									mins[j] = new_mins[j];
-
-								if (new_maxs[j] < maxs[j])
-									maxs[j] = new_maxs[j];
-							}
-						}
-						else
-						{
-							result = RT_Failure;
-							break;
-						}
-					}
-					result = RT_None;
-				}
-				else
-					result = RT_Failure;
-             }
-             else
-             	result = RT_Failure;
-             break;
-         default:
-         	result = RT_Failure;
-         }
+			return get_min_max_seq(geosCtx, cs, mins, maxs, dims, n);
+		}
 	}
-	return result;
+	else 
+		return RT_Failure;
 }
 
 int
@@ -773,7 +720,6 @@ get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs,
 	double* const mins, double* const maxs, int dims, int n)
 {
 	int result = RT_None;
-
 	for (int i = 0; i < dims; i++)
 	{
 		double v;

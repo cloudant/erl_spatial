@@ -41,13 +41,13 @@ index_test() ->
  	% check we hit and then check the intersection for the original
  	?assertEqual({ok, 3}, erl_spatial:index_intersects_count(Idx, 
  													{0.5, 0.5}, {0.5, 0.5})),
-  	?assertEqual({ok, [<<"poly">>]}, erl_spatial:index_intersects(Idx, 
+  	?assertEqual({ok, [<<"multi">>, <<"poly">>]}, erl_spatial:index_intersects(Idx, 
   													{0.0, 1.0}, {0.0, 1.0})),
 
 	% check the misses
 	?assertEqual({ok, 0}, 
 		erl_spatial:index_intersects_count(Idx, {2, 2}, {3, 3})),
-
+	
 	% clean up
 	?assertEqual(ok, erl_spatial:index_delete(Idx, <<"point">>, Pt)),
 	?assertEqual(ok, erl_spatial:index_delete(Idx, <<"poly">>, Poly)),
