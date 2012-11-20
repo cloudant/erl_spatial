@@ -51,6 +51,10 @@ int
 get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom,
 	double* const mins, double* const maxs, int dims);
 
+ERL_NIF_TERM
+intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[],
+	int exact);
+
 int64_t 
 hash(const unsigned char* szVal);
 
@@ -176,10 +180,10 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	
 	if (enif_inspect_binary(env, argv[1], &bin))
 	{
-		pszDocId = (unsigned char*)malloc(bin.size + 1);
+		doc_len = bin.size + 1;		
+		pszDocId = (unsigned char*)malloc(doc_len);
 		memcpy(pszDocId, bin.data, bin.size);
 		pszDocId[bin.size] = 0;
-		doc_len = bin.size + 1;		
 	}
 	else
 		return enif_make_tuple2(env, idx_atoms.error, 
@@ -243,36 +247,36 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	idx_state *pState;
 	const ERL_NIF_TERM* min_tuple;
 	const ERL_NIF_TERM* max_tuple;
-	int min_arity, max_arity;
+	int min_dims, max_dims;
 	uint64_t nResults = 0;
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
 
-	if (!enif_get_tuple(env, argv[1], &min_arity, &min_tuple))
+	if (!enif_get_tuple(env, argv[1], &min_dims, &min_tuple))
 		return enif_make_tuple2(env, idx_atoms.error,
 			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
 
-	if (!enif_get_tuple(env, argv[2], &max_arity, &max_tuple))
+	if (!enif_get_tuple(env, argv[2], &max_dims, &max_tuple))
 		return enif_make_tuple2(env, idx_atoms.error, 
 			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
 
-	if (!(min_arity == max_arity))
+	if (!(min_dims == max_dims))
 		return enif_make_tuple2(env, idx_atoms.error,
 			enif_make_string(env, "min and max tuple arity needs to be equal", 
 			ERL_NIF_LATIN1));
 
-	double mins[min_arity];
-	double maxs[max_arity];
+	double mins[min_dims];
+	double maxs[max_dims];
 
-	if (get_min_max_tuple(env, mins, maxs, min_tuple, max_tuple, min_arity) 
+	if (get_min_max_tuple(env, mins, maxs, min_tuple, max_tuple, min_dims) 
 																	!= RT_None)
 		return enif_make_tuple2(env, idx_atoms.error, 
 			enif_make_string(env, "error getting min and max values", 
 				ERL_NIF_LATIN1));
 
 	if (Index_Intersects_count(pState->index, mins, 
-								maxs, min_arity, &nResults) != RT_None)
+								maxs, min_dims, &nResults) != RT_None)
 		return enif_make_tuple2(env, idx_atoms.error, 
 			enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
 
@@ -280,92 +284,15 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 }
 
 ERL_NIF_TERM
+index_intersects_mbr(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	return intersects(env, argc, argv, 0);
+}
+
+ERL_NIF_TERM
 index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
-	idx_state *pState;
-	const ERL_NIF_TERM* min_tuple;
-	const ERL_NIF_TERM* max_tuple;
-	int min_arity, max_arity;
-	uint64_t nResults;
-	IndexItemH* items;
-	ERL_NIF_TERM resultList;
-
-	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
-		return enif_make_badarg(env);
-
-	if (!enif_get_tuple(env, argv[1], &min_arity, &min_tuple))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
-
-	if (!enif_get_tuple(env, argv[2], &max_arity, &max_tuple))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
-
-	if (!(min_arity == max_arity))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "min and max tuple arity needs to be equal",
-								 ERL_NIF_LATIN1));
-
-	double mins[min_arity];
-	double maxs[max_arity];
-
-	if (get_min_max_tuple(env, mins, maxs, min_tuple, max_tuple, min_arity)
-																	!= RT_None)
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "error getting min and max values", 
-								ERL_NIF_LATIN1));
-
-	if (Index_Intersects_obj(pState->index, mins, maxs,
-							 min_arity, &items, &nResults) != RT_None)
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
-
-	resultList = enif_make_list(env, 0);
-
-	for (int i = 0; i < nResults; i++)
-	{
-		unsigned char* data;
-		uint64_t len;
-		IndexItemH item = items[i];
-
-		if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
-		{
-			ErlNifBinary bin;
-			int docid_len;
-
-			// data is a NULL terminated string followed by WKB
-			docid_len = strlen((char*)data);
-
-			if (enif_alloc_binary(docid_len, &bin))
-			{
-				memcpy(bin.data, data, docid_len);
-				ERL_NIF_TERM head = enif_make_binary(env, &bin);
-				resultList = enif_make_list_cell(env, head, resultList);
-			}
-			else
-			{
-				free(data);
-				IndexItem_Destroy(item);
-				char buf[MAXBUFLEN];
-				data[len] = 0;
-				sprintf(buf, "unable to assign doc id %s to erlang term", data);
-				return enif_make_tuple2(env, idx_atoms.error, 
-					enif_make_string(env, buf, ERL_NIF_LATIN1));
-			}
-
-			free(data);
-			IndexItem_Destroy(item);
-
-		}
-		else
-		{
-			return enif_make_tuple2(env, idx_atoms.error, 
-				enif_make_string(env, "unable to execute query", 
-					ERL_NIF_LATIN1));
-		}
-	}
-
-	return enif_make_tuple2(env, idx_atoms.ok, resultList);;
+	return intersects(env, argc, argv, 1);
 }
 
 ERL_NIF_TERM index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -753,6 +680,152 @@ get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs,
 		}
 	}
 	return result;
+}
+
+ERL_NIF_TERM
+intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[],
+	int exact)
+{
+	idx_state *pState;
+	const ERL_NIF_TERM* min_tuple;
+	const ERL_NIF_TERM* max_tuple;
+	int min_dims, max_dims;
+	uint64_t nResults;
+	IndexItemH* items;
+	ERL_NIF_TERM resultList;
+
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+
+	if (!enif_get_tuple(env, argv[1], &min_dims, &min_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
+
+	if (!enif_get_tuple(env, argv[2], &max_dims, &max_tuple))
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
+
+	if (min_dims == max_dims)
+	{
+		double mins[min_dims];
+		double maxs[max_dims];
+		const GEOSPreparedGeometry* pg;
+		GEOSGeometry* bbox;
+		GEOSGeometry* ls;
+		GEOSCoordSequence* cs;
+
+		if (get_min_max_tuple(env, mins, maxs, min_tuple,
+												max_tuple, min_dims) != RT_None)
+			return enif_make_tuple2(env, idx_atoms.error, 
+				enif_make_string(env, "error getting min and max values", 
+									ERL_NIF_LATIN1));
+
+		if (Index_Intersects_obj(pState->index, mins, maxs,
+								 min_dims, &items, &nResults) != RT_None)
+			return enif_make_tuple2(env, idx_atoms.error, 
+			  enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
+
+		resultList = enif_make_list(env, 0);
+
+		if (exact)
+		{
+			// create prepared geometry which is a bbox 
+			cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
+			for (int i = 0; i < min_dims; i++)
+			{
+				GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
+					cs, 0, i, mins[i]);
+				GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
+					cs, 1, i, maxs[i]);
+			}
+
+			// create an envelope of the min / max linestring
+			// coordinates are now owned by linestring
+			ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);			
+			bbox = GEOSEnvelope_r(pState->geosCtx, ls);	
+			pg = GEOSPrepare_r(pState->geosCtx, bbox);
+		}
+
+
+		for (int i = 0; i < nResults; i++)
+		{
+			unsigned char* data;
+			uint64_t len;
+			IndexItemH item = items[i];
+			GEOSGeometry* wkb;
+
+			if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
+			{
+				ErlNifBinary bin;
+				int docid_len;
+
+				// data is a NULL terminated string followed by WKB
+				docid_len = strlen((char*)data);
+
+				if (enif_alloc_binary(docid_len, &bin))
+				{
+					if (exact)
+					{
+						// parse item WKB and test intersection exactly
+						wkb = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
+													data + docid_len + 2,
+													len - docid_len - 1);
+
+						if (wkb != NULL)
+						{						
+							if (GEOSPreparedIntersects_r(pState->geosCtx,
+											pg, wkb))
+							{
+								memcpy(bin.data, data, docid_len);
+								ERL_NIF_TERM head = enif_make_binary(env, &bin);
+								resultList = enif_make_list_cell(env, head,
+																resultList);
+							}
+							GEOSGeom_destroy_r(pState->geosCtx, wkb);
+						}
+					}
+					else
+					{
+						memcpy(bin.data, data, docid_len);
+						ERL_NIF_TERM head = enif_make_binary(env, &bin);
+						resultList = enif_make_list_cell(env, head, resultList);
+					}
+				}
+				else
+				{
+					free(data);
+					IndexItem_Destroy(item);
+					char buf[MAXBUFLEN];
+					data[len] = 0;
+					sprintf(buf, "unable to assign doc id %s to erlang term", data);
+					return enif_make_tuple2(env, idx_atoms.error, 
+						enif_make_string(env, buf, ERL_NIF_LATIN1));
+				}
+				free(data);
+				IndexItem_Destroy(item);
+			}
+			else
+			{
+				return enif_make_tuple2(env, idx_atoms.error, 
+					enif_make_string(env, "unable to execute query", 
+						ERL_NIF_LATIN1));
+			}
+		}
+
+		if (exact)
+		{
+			GEOSGeom_destroy_r(pState->geosCtx, ls);
+			GEOSGeom_destroy_r(pState->geosCtx, bbox);
+			GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+		}
+		
+		return enif_make_tuple2(env, idx_atoms.ok, resultList);
+	}
+	else
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, "min and max tuple arity needs to be equal",
+								 ERL_NIF_LATIN1));
+
 }
 
 

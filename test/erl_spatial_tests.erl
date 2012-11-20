@@ -38,11 +38,14 @@ index_test() ->
 	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"multi">>, Multi)),
 	?assertEqual({ok, [{0.0, 0.0}, {1.0, 1.0}]}, erl_spatial:index_bounds(Idx)),
 
- 	% check we hit and then check the intersection for the original
+ 	% check we hit and then check the intersection (mbr and exact) 
  	?assertEqual({ok, 3}, erl_spatial:index_intersects_count(Idx, 
  													{0.5, 0.5}, {0.5, 0.5})),
-  	?assertEqual({ok, [<<"multi">>, <<"poly">>]}, erl_spatial:index_intersects(Idx, 
-  													{0.0, 1.0}, {0.0, 1.0})),
+ 	?assertEqual({ok, [<<"multi">>, <<"poly">>]}, 
+  			erl_spatial:index_intersects_mbr(Idx, {0.0, 1.0}, {0.0, 1.0})),
+
+	?assertEqual({ok, [<<"poly">>]}, 
+  			erl_spatial:index_intersects(Idx, {0.0, 1.0}, {0.0, 1.0})),
 
 	% check the misses
 	?assertEqual({ok, 0}, 
