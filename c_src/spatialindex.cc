@@ -26,14 +26,16 @@ static struct {
 
 void
 notice(const char *fmt, ...) {
-	fprintf(stdout, "%s\n", fmt);
-	fflush(stdout);
+	// TODO
+	// fprintf(stdout, "%s\n", fmt);
+	// fflush(stdout);
 }
 
 void
 error(const char *fmt, ...) {
-	fprintf(stderr, "%s\n", fmt);
-	fflush(stderr);
+	// TODO
+	// fprintf(stderr, "%s\n", fmt);
+	// fflush(stderr);
 }
 
 void
@@ -183,7 +185,7 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		doc_len = bin.size + 1;		
 		pszDocId = (unsigned char*)malloc(doc_len);
 		memcpy(pszDocId, bin.data, bin.size);
-		pszDocId[bin.size] = 0;
+		pszDocId[doc_len - 1] = 0;
 	}
 	else
 		return enif_make_tuple2(env, idx_atoms.error, 
@@ -208,7 +210,7 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		pData = (unsigned char*)malloc(wkb.size + doc_len);
 		
 		memcpy(pData, (unsigned char*)pszDocId, doc_len);
-		memcpy(pData + doc_len + 1, wkb.data, wkb.size);
+		memcpy(pData + doc_len, wkb.data, wkb.size);
 
 		if (Index_InsertData(pState->index,
 			hash(pszDocId), mins, maxs, dims, 
@@ -295,7 +297,8 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	return intersects(env, argc, argv, 1);
 }
 
-ERL_NIF_TERM index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM 
+index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	uint32_t dims;
@@ -331,7 +334,8 @@ ERL_NIF_TERM index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	return enif_make_tuple2(env, idx_atoms.ok, lst);
 }
 
-ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+ERL_NIF_TERM
+index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	unsigned char* pszDocId;
@@ -749,58 +753,93 @@ intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[],
 
 		for (int i = 0; i < nResults; i++)
 		{
-			unsigned char* data;
-			uint64_t len;
+			unsigned char* data = NULL;
+			uint64_t len = 0;
 			IndexItemH item = items[i];
-			GEOSGeometry* wkb;
+			GEOSGeometry* wkb = NULL;
 
 			if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
 			{
 				ErlNifBinary bin;
-				int docid_len;
+				int doc_len;
 
 				// data is a NULL terminated string followed by WKB
-				docid_len = strlen((char*)data);
+				doc_len = strlen((char*)data) + 1;
 
-				if (enif_alloc_binary(docid_len, &bin))
+				if (enif_alloc_binary(doc_len - 1, &bin))
 				{
 					if (exact)
 					{
 						// parse item WKB and test intersection exactly
 						wkb = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
-													data + docid_len + 2,
-													len - docid_len - 1);
-
+													data + doc_len,
+													len - doc_len);
 						if (wkb != NULL)
-						{						
+						{	
 							if (GEOSPreparedIntersects_r(pState->geosCtx,
 											pg, wkb))
 							{
-								memcpy(bin.data, data, docid_len);
+								memcpy(bin.data, data, doc_len - 1);
 								ERL_NIF_TERM head = enif_make_binary(env, &bin);
 								resultList = enif_make_list_cell(env, head,
 																resultList);
 							}
 							GEOSGeom_destroy_r(pState->geosCtx, wkb);
 						}
+						else
+						{
+							char buf[MAXBUFLEN];
+							char doc[doc_len];
+							memcpy(doc, data, doc_len);
+							doc[doc_len - 1] = 0;
+
+							sprintf(buf, "unable to parse document %s geometry",
+													 doc);
+
+							free(data);
+							IndexItem_Destroy(item);
+
+							if (exact)
+							{
+								GEOSGeom_destroy_r(pState->geosCtx, ls);
+								GEOSGeom_destroy_r(pState->geosCtx, bbox);
+								GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+							}
+
+							return enif_make_tuple2(env, idx_atoms.error, 
+								enif_make_string(env, buf, ERL_NIF_LATIN1));
+						}
 					}
 					else
 					{
-						memcpy(bin.data, data, docid_len);
+						memcpy(bin.data, data, doc_len - 1);
 						ERL_NIF_TERM head = enif_make_binary(env, &bin);
 						resultList = enif_make_list_cell(env, head, resultList);
 					}
 				}
 				else
 				{
+					char buf[MAXBUFLEN];
+					char doc[doc_len];
+					memcpy(doc, data, doc_len);
+					doc[doc_len - 1] = 0;
+					sprintf(buf, "unable to assign doc id %s to erlang term",
+											 doc);
+
 					free(data);
 					IndexItem_Destroy(item);
-					char buf[MAXBUFLEN];
-					data[len] = 0;
-					sprintf(buf, "unable to assign doc id %s to erlang term", data);
+
+					if (exact)
+					{
+						GEOSGeom_destroy_r(pState->geosCtx, ls);
+						GEOSGeom_destroy_r(pState->geosCtx, bbox);
+						GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+					}
+
 					return enif_make_tuple2(env, idx_atoms.error, 
 						enif_make_string(env, buf, ERL_NIF_LATIN1));
 				}
+
 				free(data);
 				IndexItem_Destroy(item);
 			}
@@ -818,16 +857,14 @@ intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[],
 			GEOSGeom_destroy_r(pState->geosCtx, bbox);
 			GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
 		}
-		
+
 		return enif_make_tuple2(env, idx_atoms.ok, resultList);
 	}
 	else
 		return enif_make_tuple2(env, idx_atoms.error, 
 			enif_make_string(env, "min and max tuple arity needs to be equal",
 								 ERL_NIF_LATIN1));
-
 }
-
 
 int
 get_min_max_tuple(ErlNifEnv* env, double* mins, double* maxs,
