@@ -44,6 +44,7 @@ ERL_NIF_TERM index_intersects_mbr(ErlNifEnv* env, int argc,
 													const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+ERL_NIF_TERM index_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM sidx_version(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 ERL_NIF_TERM geos_version(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 

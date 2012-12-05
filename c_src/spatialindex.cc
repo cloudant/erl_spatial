@@ -335,6 +335,18 @@ index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 }
 
 ERL_NIF_TERM
+index_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+
+	Index_Destroy(pState->index);
+
+	return idx_atoms.ok;
+}
+
+ERL_NIF_TERM
 index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;

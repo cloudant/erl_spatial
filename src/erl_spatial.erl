@@ -9,7 +9,8 @@
 			index_insert/3, index_insert/4,
 			index_intersects_count/3, index_intersects_mbr/3,
 			index_intersects/3, index_bounds/1,
-			index_delete/3, index_delete/4, sidx_version/0, geos_version/0]).
+			index_delete/3, index_delete/4, 
+			index_destroy/1, sidx_version/0, geos_version/0]).
 
 index_create() ->
 	index_create([{?IDX_STORAGE, ?IDX_MEMORY}]).
@@ -34,6 +35,9 @@ index_intersects(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
 index_bounds(_Idx) ->
+	erlang:nif_error(not_loaded).
+
+index_destroy(Idx) ->
 	erlang:nif_error(not_loaded).
 
 sidx_version() ->

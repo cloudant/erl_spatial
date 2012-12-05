@@ -16,6 +16,7 @@ static ErlNifFunc nif_funcs[] = {
     {"index_intersects_mbr", 3, index_intersects_mbr},
     {"index_bounds", 1, index_bounds},
     {"index_delete", 4, index_delete},
+    {"index_destroy", 1, index_destroy},
     {"sidx_version", 0, sidx_version},
     {"geos_version", 0, geos_version}
 };
