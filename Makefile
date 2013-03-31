@@ -1,3 +1,5 @@
+CS_MAP_DIR:=/usr/local/share/CsMap/Dictionaries/
+
 compile:
 	@./rebar compile
 

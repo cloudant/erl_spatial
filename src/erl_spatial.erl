@@ -1,4 +1,14 @@
-%% Copyright 2012 Cloudant
+% Licensed under the Apache License, Version 2.0 (the "License"); you may not
+% use this file except in compliance with the License. You may obtain a copy of
+% the License at
+%
+%   http://www.apache.org/licenses/LICENSE-2.0
+%
+% Unless required by applicable law or agreed to in writing, software
+% distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+% WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+% License for the specific language governing permissions and limitations under
+% the License.
 -module(erl_spatial).
 
 -include("erl_spatial.hrl").
@@ -8,7 +18,8 @@
 -export([index_create/0, index_create/1, index_create/2, 
 			index_insert/3, index_insert/4,
 			index_intersects_count/3, index_intersects_mbr/3,
-			index_intersects/3, index_bounds/1,
+			index_intersects_mbr/5, index_intersects/2, index_intersects/4, 
+			index_intersects/3, index_intersects/5, index_bounds/1,
 			index_delete/3, index_delete/4, 
 			index_destroy/1, sidx_version/0, geos_version/0]).
 
@@ -28,16 +39,29 @@ index_create(FileName, _CRS) ->
 index_intersects_count(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
-index_intersects_mbr(_Idx, _Min, _Max) ->
+index_intersects_mbr(Idx, Min, Max) ->
+	index_intersects_mbr(Idx, Min, Max, 0, 0).
+
+index_intersects_mbr(_Idx, _Min, _Max, _ReqCrs, _DbCrs) ->
 	erlang:nif_error(not_loaded).
 
-index_intersects(_Idx, _Min, _Max) ->
+% Request is either WKT or {_Lon, _Lat, _Radius}
+index_intersects(Idx, Request) ->
+	index_intersects(Idx, Request, 0, 0).
+
+index_intersects(_Idx, _Request, _ReqCrs, _DbCrs) ->
+ 	erlang:nif_error(not_loaded).
+
+index_intersects(Idx, Min, Max) ->
+	index_intersects(Idx, Min,  Max, 0, 0).
+
+index_intersects(_Idx, _Min, _Max, _ReqCrs, _DbCrs) ->
 	erlang:nif_error(not_loaded).
 
 index_bounds(_Idx) ->
 	erlang:nif_error(not_loaded).
 
-index_destroy(Idx) ->
+index_destroy(_Idx) ->
 	erlang:nif_error(not_loaded).
 
 sidx_version() ->

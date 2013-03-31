@@ -1,3 +1,14 @@
+% Licensed under the Apache License, Version 2.0 (the "License"); you may not
+% use this file except in compliance with the License. You may obtain a copy of
+% the License at
+%
+%   http://www.apache.org/licenses/LICENSE-2.0
+%
+% Unless required by applicable law or agreed to in writing, software
+% distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+% WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+% License for the specific language governing permissions and limitations under
+% the License.
 -module(erl_spatial_tests).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -43,9 +54,19 @@ index_test() ->
  													{0.5, 0.5}, {0.5, 0.5})),
  	?assertEqual({ok, [<<"multi">>, <<"poly">>]}, 
   			erl_spatial:index_intersects_mbr(Idx, {0.0, 1.0}, {0.0, 1.0})),
-
 	?assertEqual({ok, [<<"poly">>]}, 
   			erl_spatial:index_intersects(Idx, {1.0, 0.0}, {1.0, 0.0})),
+
+	% wkt test
+	?assertEqual({ok, [<<"multi">>, <<"poly">>, <<"point">>]},
+		erl_spatial:index_intersects(Idx, "POLYGON ((0 1, 0 0, 1 0, 1 1, 0 1))")),
+	
+	% polygon with hole
+	?assertEqual({ok, [<<"multi">>, <<"poly">>]},
+		erl_spatial:index_intersects(Idx, "POLYGON ((0 1, 0 0, 1 0, 1 1, 0 1),
+			(0.25 0.75, 0.25 0.25, 0.75 0.25, 0.75 0.75, 0.25 0.75))")),
+	?assertEqual({ok, [<<"poly">>]},
+		erl_spatial:index_intersects(Idx, "POINT(1 0)")),
 
 	% check the misses
 	?assertEqual({ok, 0}, 
@@ -58,7 +79,29 @@ index_test() ->
 	?assertEqual({ok, 0}, erl_spatial:index_intersects_count(Idx, 
 															{0, 0}, {1, 1})),
 
-	% real life test
+	% radius test at the equator 0.001 degs ~ 111 metres
+	% index_intersects(_Idx, {_Lon, _Lat, _Radius, _DbCrs}) -
+	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"pt1">>,
+		"{\"type\":\"Point\",\"coordinates\":[0.0, 0.0]}")),
+	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"pt2">>,
+		"{\"type\":\"Point\",\"coordinates\":[0.001, 0.0]}")),
+
+	% radius of 100 metres
+	?assertEqual({ok, [<<"pt1">>]},
+		erl_spatial:index_intersects(Idx, {0, 0, 100})),
+
+	% radius of 120 metres
+	?assertEqual({ok, [<<"pt2">>, <<"pt1">>]},
+		erl_spatial:index_intersects(Idx, {0, 0, 120})),
+
+	% real tests
+	% CO ski area
+	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"ski">>,
+		"{\"type\":\"Point\",\"coordinates\":[-106.23779296875, 40.09067983779908]}")),
+	?assertEqual({ok, [<<"ski">>]},
+		erl_spatial:index_intersects(Idx, {-106.23779296875, 40.09067983779908,64291.35052510813})),
+
+	% UK
 	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"uk">>, "{\"type\":\"MultiPolygon\",\"coordinates\":[[[[-5.661949,54.554603],[-6.197885,53.867565],[-6.95373,54.073702],[-7.572168,54.059956],[-7.366031,54.595841],[-7.572168,55.131622],[-6.733847,55.17286],[-5.661949,54.554603]]],[[[-3.005005,58.635],[-4.073828,57.553025],[-3.055002,57.690019],[-1.959281,57.6848],[-2.219988,56.870017],[-3.119003,55.973793],[-2.085009,55.909998],[-2.005676,55.804903],[-1.114991,54.624986],[-0.430485,54.464376],[0.184981,53.325014],[0.469977,52.929999],[1.681531,52.73952],[1.559988,52.099998],[1.050562,51.806761],[1.449865,51.289428],[0.550334,50.765739],[-0.787517,50.774989],[-2.489998,50.500019],[-2.956274,50.69688],[-3.617448,50.228356],[-4.542508,50.341837],[-5.245023,49.96],[-5.776567,50.159678],[-4.30999,51.210001],[-3.414851,51.426009],[-3.422719,51.426848],[-4.984367,51.593466],[-5.267296,51.9914],[-4.222347,52.301356],[-4.770013,52.840005],[-4.579999,53.495004],[-3.093831,53.404547],[-3.09208,53.404441],[-2.945009,53.985],[-3.614701,54.600937],[-3.630005,54.615013],[-4.844169,54.790971],[-5.082527,55.061601],[-4.719112,55.508473],[-5.047981,55.783986],[-5.586398,55.311146],[-5.644999,56.275015],[-6.149981,56.78501],[-5.786825,57.818848],[-5.009999,58.630013],[-4.211495,58.550845],[-3.005005,58.635]]]]}")),
 	?assertEqual({ok, [<<"uk">>]}, erl_spatial:index_intersects_mbr(Idx, {0, 52},{0, 52})),
 	?assertEqual({ok, [<<"uk">>]}, erl_spatial:index_intersects(Idx, {0, 52},{0, 52})).
