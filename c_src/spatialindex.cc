@@ -10,6 +10,8 @@
 //  License for the specific language governing permissions and limitations under
 //  the License.
 #include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 
 #include "erl_spatial.h"
 
@@ -627,7 +629,7 @@ index_bounds(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	pErlMins = (ERL_NIF_TERM*)malloc(dims * sizeof(ERL_NIF_TERM));
 	pErlMaxs = (ERL_NIF_TERM*)malloc(dims * sizeof(ERL_NIF_TERM));
 
-	for (int i = 0; i < dims; i++)
+	for (uint32_t i = 0; i < dims; i++)
 	{
 		pErlMins[i] = enif_make_double(env, pMins[i]);
 		pErlMaxs[i] = enif_make_double(env, pMaxs[i]);
@@ -1014,7 +1016,7 @@ ERL_NIF_TERM intersects(ErlNifEnv* env, idx_state *pState,
 	GEOSGeometry* geom, int exact)
 {
 	ERL_NIF_TERM resultList;
-	const GEOSPreparedGeometry* pg;
+	const GEOSPreparedGeometry* pg = NULL;
 	uint64_t nResults;
 	IndexItemH* items;
 	int dims;
@@ -1048,7 +1050,7 @@ ERL_NIF_TERM intersects(ErlNifEnv* env, idx_state *pState,
 	resultList = enif_make_list(env, 0);
 
 
-	for (int i = 0; i < nResults; i++)
+	for (uint64_t i = 0; i < nResults; i++)
 	{
 		unsigned char* data = NULL;
 		uint64_t len = 0;
