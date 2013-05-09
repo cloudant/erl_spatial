@@ -26,6 +26,7 @@
 #define MAXBUFLEN	1024
 
 static ErlNifResourceType *index_type = NULL;
+static ErlNifMutex* csMapMutex = NULL;
 
 struct idx_state_t
 {
@@ -102,7 +103,9 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 	res = enif_open_resource_type(env, NULL, "index_type", idx_state_dtor,
 																 flags, NULL);
 
-	if (res == NULL)
+	csMapMutex = enif_mutex_create("csMapMutex");
+
+	if ((csMapMutex == NULL) || (res == NULL))
 	{
 		return -1;
 	}
@@ -116,8 +119,9 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 
 		// initialise CS Map library to use environment variable
 		// CS_MAP_DIR for data dictionaries
-		CS_altdr (0);
-
+		CS_altdr(0);
+		CS_init(0);
+	
 		return 0;
 	}
 }
@@ -132,6 +136,11 @@ void
 unload(ErlNifEnv* env, void* priv)
 {
     enif_free(priv);
+
+	if (csMapMutex != NULL) {
+        enif_mutex_destroy(csMapMutex);
+    }
+
     return;
 }
 
@@ -378,6 +387,7 @@ index_intersects_mbr(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				}
 			}
 
+			enif_mutex_lock(csMapMutex);
 			EpsgCode = get_crs(szSrcCs);
 			csSrcDefn = CSepsg2adskCS(EpsgCode);
 			EpsgCode = get_crs(szDbCs);
@@ -406,6 +416,8 @@ index_intersects_mbr(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				}
 			}
 		}
+		enif_mutex_unlock(csMapMutex);
+
 
 		// make a bbox from the coordinates and call intersects
 		cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
@@ -440,6 +452,7 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	GEOSGeometry* geom = NULL;
+	double pid = 0;
 
 	// TODO add reprojection logic as in intersects_mbr
 	// TODO use a function pointer since all geo operators have arity 2
@@ -469,12 +482,13 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		else
 		{
 			// radius, make a pt and buffer, radius is in metres
-			if (cnt == 3)
+			if ((cnt == 3) || (cnt == 4))
 			{
 				double dist;
 				char szDbCrs[MAXBUFLEN];
 				long EpsgCode;
-				const char* csSrcDefn;
+			 	char csSrcDefn[MAXBUFLEN];
+				const char* csKeyName = "LL";
 				double xyz[3];
 				GEOSGeometry* pt;
 
@@ -483,6 +497,13 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 					&& (get_number(env, tuple, 2, &dist)) == RT_None)
 				{	
 					xyz[2] = 0.0;
+
+					// debug
+					if (cnt == 4)
+					{
+						get_number(env, tuple, 3, &pid);
+					}
+		
 					// TODO rework this for src and db crs
 					if (
 						enif_get_string(env, argv[3], szDbCrs, 
@@ -495,19 +516,21 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 					// only support EPSG
 					// TODO add a special case for MGRS
+					enif_mutex_lock(csMapMutex);
 					EpsgCode = get_crs(szDbCrs);
-					csSrcDefn = CSepsg2adskCS(EpsgCode);
+					strcpy(csSrcDefn, CSepsg2adskCS(EpsgCode));
+
 					// convert the coordinates
-					if (CS_cnvrt(csSrcDefn, "LL", xyz) == 0)
+					if (CS_cnvrt(csSrcDefn, csKeyName, xyz) == 0)
 					{
 						double eRadius; // metres
 						double eSq;
 						char csEllipsoid[MAXBUFLEN];
-
-						CS_getEllipsoidOf("LL", csEllipsoid, MAXBUFLEN);
-						if (CS_getElValues(csEllipsoid, &eRadius, &eSq) == 0)
+						
+						if ((CS_getEllipsoidOf(csKeyName, csEllipsoid, MAXBUFLEN) == 0)
+							&& (CS_getElValues(csEllipsoid, &eRadius, &eSq) == 0))
 						{
-							double xyz_result[3];
+							double xyz_result[3];	
 
 							// use the convenience method,
 							// azimuth is degrees from north
@@ -515,8 +538,8 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	 							xyz_result) == 0)
 	 						{
 	 							// convert back to original cs
-								if ((CS_cnvrt("LL", csSrcDefn, xyz_result) == 0)
-									&& CS_cnvrt("LL", csSrcDefn, xyz) == 0)
+								if ((CS_cnvrt(csKeyName, csSrcDefn, xyz_result) == 0)
+									&& CS_cnvrt(csKeyName, csSrcDefn, xyz) == 0)
 								{
 									GEOSCoordSequence* cs;
 									GEOSBufferParams* bp = 
@@ -533,7 +556,7 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 												cs);
 
 									if (pt != NULL)
-									{								
+									{					
 										// buffer geom 
 										geom = GEOSBufferWithParams_r(
 											pState->geosCtx,
@@ -541,17 +564,16 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 											bp,
 											fabs(xyz[0] - xyz_result[0])
 										);
-									
 									}
-
-									if (pt)
+									else
 										GEOSGeom_destroy_r(pState->geosCtx, pt);
 
-									GEOSBufferParams_destroy(bp);
+									GEOSBufferParams_destroy_r(pState->geosCtx, bp);
 								}
 	 						}
 	 					}
 					}
+					enif_mutex_unlock(csMapMutex);
 				}
 			}
 		}
@@ -595,7 +617,7 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		break;
 	}
 
-	if (geom)
+	if (geom != NULL)
 	{
 		ERL_NIF_TERM result = intersects(env, pState, geom, 1);
 		GEOSGeom_destroy_r(pState->geosCtx, geom);
@@ -603,8 +625,12 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	}
 	else
 	{
+	    // check CsMap
+		char errMsg[MAXBUFLEN];
+	    CS_errmsg(errMsg, MAXBUFLEN);
+
 		return enif_make_tuple2(env, idx_atoms.error,
-			enif_make_string(env, "Unable to create query geometries",
+			enif_make_string(env, errMsg,
 			ERL_NIF_LATIN1));
 	}
 
