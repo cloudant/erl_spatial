@@ -452,7 +452,6 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	GEOSGeometry* geom = NULL;
-	double pid = 0;
 
 	// TODO add reprojection logic as in intersects_mbr
 	// TODO use a function pointer since all geo operators have arity 2
@@ -482,7 +481,7 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		else
 		{
 			// radius, make a pt and buffer, radius is in metres
-			if ((cnt == 3) || (cnt == 4))
+			if (cnt == 3)
 			{
 				double dist;
 				char szDbCrs[MAXBUFLEN];
@@ -498,12 +497,6 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				{	
 					xyz[2] = 0.0;
 
-					// debug
-					if (cnt == 4)
-					{
-						get_number(env, tuple, 3, &pid);
-					}
-		
 					// TODO rework this for src and db crs
 					if (
 						enif_get_string(env, argv[3], szDbCrs, 

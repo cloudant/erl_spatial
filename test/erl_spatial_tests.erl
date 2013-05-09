@@ -101,10 +101,10 @@ index_test() ->
 	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"ski">>,
 		"{\"type\":\"Point\",\"coordinates\":[-106.23779296875, 40.09067983779908]}")),
 
-	lists:foreach(fun(X) -> 
+	lists:foreach(fun(_X) -> 
 		spawn(fun() ->
 			 ?assertEqual({ok, [<<"ski">>]},
-				erl_spatial:index_intersects(Idx, {-106.23779296875, 40.09067983779908,64291.35052510813, X}))
+				erl_spatial:index_intersects(Idx, {-106.23779296875, 40.09067983779908,64291.35052510813}))
 			end)
 		end, lists:seq(1, 20)),
 
