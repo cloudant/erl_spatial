@@ -35,6 +35,7 @@
 -define(IDX_FILENAMEEXTDAT, 21).
 -define(IDX_FILENAMEEXTIDX, 22).
 -define(IDX_INDEXID, 23).
+-define(IDX_RESULTLIMIT, 24).
 
 
 % RTIndexType
@@ -55,3 +56,15 @@
 % CRS
 -define(WGS84_LL, "urn:ogc:def:crs:EPSG::4326").
 
+% function
+-define(ST_INTERSECTS_MBR, 0).
+-define(ST_INTERSECTS, 1).
+-define(ST_CONTAINS, 2).
+-define(ST_CONTAINS_PROPERLY, 3).
+-define(ST_COVERED_BY, 4).
+-define(ST_COVERS, 5).
+-define(ST_CROSSES, 6).
+-define(ST_DISJOINT, 7).
+-define(ST_OVERLAPS, 8).
+-define(ST_TOUCHES, 9).
+-define(ST_WITHIN, 10).

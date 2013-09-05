@@ -80,8 +80,13 @@ int
 get_number(ErlNifEnv* env, const ERL_NIF_TERM* tuple, int pos, double* v);
 
 ERL_NIF_TERM
-intersects(ErlNifEnv* env, idx_state *pState, 
-	GEOSGeometry* geom, int exact);
+spatial_function(ErlNifEnv* env, idx_state *pState, 
+	GEOSGeometry* geom, 
+		char (*pGEOS_Fun_r)(
+			GEOSContextHandle_t, 
+			const GEOSPreparedGeometry*,
+			const GEOSGeometry*
+		), int exact);
 
 int64_t 
 hash(const unsigned char* szVal);
@@ -103,7 +108,7 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 	res = enif_open_resource_type(env, NULL, "index_type", idx_state_dtor,
 																 flags, NULL);
 
-	csMapMutex = enif_mutex_create("csMapMutex");
+	csMapMutex = enif_mutex_create((char*)"csMapMutex");
 
 	if ((csMapMutex == NULL) || (res == NULL))
 	{
@@ -190,7 +195,7 @@ index_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 	IndexH handle = Index_Create(props);
 
-	if (Index_IsValid(handle))
+	if ((handle != NULL) && Index_IsValid(handle))
 	{
 		pState->index = handle;
 
@@ -203,9 +208,16 @@ index_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		return enif_make_tuple2(env, idx_atoms.ok, result);
 	}
 	else
+	{
+		char buf[MAXBUFLEN];
+		char* pszErrorMsg = Error_GetLastErrorMsg();
+		sprintf(buf, "Unable to make a valid index: %s", pszErrorMsg);
+		free(pszErrorMsg);
+
 		return enif_make_tuple2(env, idx_atoms.error, 
 			enif_make_string(env, 
-				"Unable to make a valid index", ERL_NIF_LATIN1));
+				buf, ERL_NIF_LATIN1));
+	}
 }
 
 ERL_NIF_TERM 
@@ -327,145 +339,23 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 }
 
 ERL_NIF_TERM
-index_intersects_mbr(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
-{
-	idx_state *pState;
-	const ERL_NIF_TERM* min_tuple;
-	const ERL_NIF_TERM* max_tuple;
-	int min_dims, max_dims;
-	GEOSCoordSequence* cs;
-	GEOSGeometry* bbox;
-	GEOSGeometry* ls;
-	char szSrcCs[MAXBUFLEN];
-	char szDbCs[MAXBUFLEN];
-
-	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
-		return enif_make_badarg(env);
-
-	if (!enif_get_tuple(env, argv[1], &min_dims, &min_tuple))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "Unable to parse min tuple", ERL_NIF_LATIN1));
-
-	if (!enif_get_tuple(env, argv[2], &max_dims, &max_tuple))
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
-
-	if (min_dims == max_dims)
-	{
-		double mins[min_dims];
-		double maxs[max_dims];
-
-		if (get_min_max_tuple(env, mins, maxs, min_tuple,
-												max_tuple, min_dims) != RT_None)
-			return enif_make_tuple2(env, idx_atoms.error, 
-				enif_make_string(env, "error getting min and max values", 
-									ERL_NIF_LATIN1));	
-
-		if ((enif_get_string(env, argv[3], szSrcCs, MAXBUFLEN, 
-								ERL_NIF_LATIN1) > 0) &&
-			(enif_get_string(env, argv[4], szDbCs, MAXBUFLEN, 
-								ERL_NIF_LATIN1) > 0))
-		{
-			// reproject request cs to db
-			const char* csSrcDefn;
-			const char* csDbDefn;
-			double minsIn[3];
-			double maxsIn[3];
-			long EpsgCode;
-
-			for (int i = 0; i < 3; i++)
-			{
-				if (i < min_dims)
-				{
-					minsIn[i] = mins[i];
-					maxsIn[i] = maxs[i];
-				}
-				else
-				{
-					minsIn[i] = 0.0;
-					maxsIn[i] = 0.0;
-				}
-			}
-
-			enif_mutex_lock(csMapMutex);
-			EpsgCode = get_crs(szSrcCs);
-			csSrcDefn = CSepsg2adskCS(EpsgCode);
-			EpsgCode = get_crs(szDbCs);
-			csDbDefn = CSepsg2adskCS(EpsgCode);
-
-			// convert the coordinates
-			if ((CS_cnvrt(csSrcDefn, csDbDefn, minsIn) != 0) ||
-				(CS_cnvrt(csSrcDefn, csDbDefn, maxsIn) != 0))
-			{
-				return enif_make_tuple2(env, idx_atoms.error, 
-					enif_make_string(env, "error reprojecting coordinates", 
-										ERL_NIF_LATIN1));	
-
-			}
-			else
-			{
-				for (int i = 0; i < 3; i++)
-				{
-					if (i < min_dims)
-					{
-						mins[i] = minsIn[i];
-						maxs[i] = maxsIn[i];
-					}
-					else
-						break;
-				}
-			}
-		}
-		enif_mutex_unlock(csMapMutex);
-
-
-		// make a bbox from the coordinates and call intersects
-		cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
-		for (int i = 0; i < min_dims; i++)
-		{
-			GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
-				cs, 0, i, mins[i]);
-			GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
-				cs, 1, i, maxs[i]);
-		}
-
-		// create an envelope of the min / max linestring
-		// coordinates are now owned by linestring
-		ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);
-		bbox = GEOSEnvelope_r(pState->geosCtx, ls);
-		// ERL_NIF_TERM intersects(ErlNifEnv* env, idx_state *pState, 
-		// GEOSGeometry* bbox, int exact)
-		ERL_NIF_TERM result = intersects(env, pState, bbox, 0);
-
-		GEOSGeom_destroy_r(pState->geosCtx, ls);
-		GEOSGeom_destroy_r(pState->geosCtx, bbox);
-		return result;
-	}
-	else
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "min and max tuple arity needs to be equal",
-								 ERL_NIF_LATIN1));
-}
-
-ERL_NIF_TERM
-index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	GEOSGeometry* geom = NULL;
+	int functCode = NULL;
 
-	// TODO add reprojection logic as in intersects_mbr
-	// TODO use a function pointer since all geo operators have arity 2
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
 
 	// is this a bbox, wkt or radius query
 	switch (argc) {
-	case 4: 
+	case 5: 
 		int cnt;
 		const ERL_NIF_TERM* tuple;
-		// crs is optional and assumed to EPSG:4326 if not specified
+		// output crs is optional and assumed to EPSG:4326 LL if not specified
 		// either a wkt string or {lat, lon, radius(m), crs} tuple
-		// calculate mbr and call intersects with exact argument
+		// calculate mbr and call geos function with exact argument
 		// if a tuple then radius else wkt
 		if (!enif_get_tuple(env, argv[1], &cnt, &tuple))
 		{
@@ -497,7 +387,6 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				{	
 					xyz[2] = 0.0;
 
-					// TODO rework this for src and db crs
 					if (
 						enif_get_string(env, argv[3], szDbCrs, 
 							MAXBUFLEN, ERL_NIF_LATIN1) > 0)
@@ -570,8 +459,10 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				}
 			}
 		}
+
+		enif_get_int(env, argv[4], &functCode);
 		break;
-	default:
+	case 6:
 	    // min max bbox query with exact intersection of index geometry
 		const ERL_NIF_TERM* min_tuple;
 		const ERL_NIF_TERM* max_tuple;
@@ -607,13 +498,98 @@ index_intersects(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			geom = GEOSEnvelope_r(pState->geosCtx, ls);
 			GEOSGeom_destroy_r(pState->geosCtx, ls);
 		}
+
+		enif_get_int(env, argv[3], &functCode);
 		break;
+	default: 
+		// return
+		return enif_make_tuple2(env, idx_atoms.error,
+			enif_make_string(env, "unknown spatial function",
+			ERL_NIF_LATIN1));
 	}
 
 	if (geom != NULL)
 	{
-		ERL_NIF_TERM result = intersects(env, pState, geom, 1);
+		// switch function call
+		ERL_NIF_TERM result;
+		// all geometry operations are in the coordinate system of the DB
+		 switch (functCode)
+		{
+			case 0:
+			{
+				// INTERSECTS_MBR
+				result = spatial_function(env, pState, geom, &GEOSPreparedIntersects_r, 0);
+				break;
+			}
+			case 1:
+			{
+				// INTERSECTS 
+				result = spatial_function(env, pState, geom, &GEOSPreparedIntersects_r, 1);
+				break;
+			}
+			case 2: 
+			{
+				// CONTAINS
+				result = spatial_function(env, pState, geom, &GEOSPreparedContains_r, 1);
+				break;
+			}
+			case 3: 
+			{
+				// CONTAINS PROPERLY
+				result = spatial_function(env, pState, geom, &GEOSPreparedContainsProperly_r, 1);
+				break;
+			}
+			case 4:
+			{
+				// COVERED BY
+				result = spatial_function(env, pState, geom, &GEOSPreparedCoveredBy_r, 1);
+				break;
+			}
+			case 5:
+			{
+				// COVERS
+				result = spatial_function(env, pState, geom, &GEOSPreparedCovers_r, 1);
+				break;
+			}
+			case 6:
+			{
+				// CROSSES
+				result = spatial_function(env, pState, geom, &GEOSPreparedCrosses_r, 1);
+				break;
+			}
+			case 7:
+			{
+				// DISJOINT
+				result = spatial_function(env, pState, geom, &GEOSPreparedDisjoint_r, 1);
+				break;
+			}
+			case 8:
+			{
+				// OVERLAPS
+				result = spatial_function(env, pState, geom, &GEOSPreparedOverlaps_r, 1);
+				break;
+			}
+			case 9:
+			{
+				// TOUCHES
+				result = spatial_function(env, pState, geom, &GEOSPreparedTouches_r, 1);
+				break;
+			}
+			case 10:
+			{
+				// WITHIN
+				result = spatial_function(env, pState, geom, &GEOSPreparedWithin_r, 1);
+				break;
+			}
+			default:
+				GEOSGeom_destroy_r(pState->geosCtx, geom);
+				return enif_make_tuple2(env, idx_atoms.error,
+				enif_make_string(env, "unknown spatial function",
+				ERL_NIF_LATIN1));
+		}
+
 		GEOSGeom_destroy_r(pState->geosCtx, geom);
+
 		return result;
 	}
 	else
@@ -747,6 +723,81 @@ index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			enif_make_string(env, "Unable to parse WKB data", ERL_NIF_LATIN1));
 	}
 }
+
+ERL_NIF_TERM
+index_get_resultset_limit(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+	return enif_make_uint64(env, Index_GetResultSetLimit(pState->index));
+}
+
+ERL_NIF_TERM
+index_set_resultset_limit(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	uint64_t nResultLimit;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+	
+	if (!enif_get_uint64(env, argv[1], (ErlNifUInt64*) &nResultLimit))
+		return enif_make_tuple(env, idx_atoms.error,
+			enif_make_string(env, "Unable to parse resultset limit", ERL_NIF_LATIN1));
+
+	if (Index_SetResultSetLimit(pState->index, nResultLimit) != RT_None)
+	{
+		return enif_make_tuple(env, idx_atoms.error,
+			enif_make_string(env, "Unable to set resultset limit", ERL_NIF_LATIN1));
+ 
+	}
+
+	return idx_atoms.ok;
+}
+
+ERL_NIF_TERM
+index_get_resultset_offset(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+	return enif_make_uint64(env, Index_GetResultSetOffset(pState->index));
+}
+
+ERL_NIF_TERM
+index_set_resultset_offset(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	uint64_t nResultLimit;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+	
+	if (!enif_get_uint64(env, argv[1], (ErlNifUInt64*) &nResultLimit))
+		return enif_make_tuple(env, idx_atoms.error,
+			enif_make_string(env, "Unable to parse resultset limit", ERL_NIF_LATIN1));
+
+	if (Index_SetResultSetOffset(pState->index, nResultLimit) != RT_None)
+	{
+		return enif_make_tuple(env, idx_atoms.error,
+			enif_make_string(env, "Unable to set resultset limit", ERL_NIF_LATIN1));
+ 
+	}
+
+	return idx_atoms.ok;
+}
+
+
+ERL_NIF_TERM 
+index_flush(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	idx_state *pState;
+	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
+		return enif_make_badarg(env);
+
+	Index_Flush(pState->index);
+	return idx_atoms.ok;
+}
+
 
 ERL_NIF_TERM
 geos_version(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -953,6 +1004,14 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term,
 			}
 			else result = RT_Failure;	
 			break;
+		case ResultSetLimit:
+			uint64_t l;
+			if (enif_get_uint64(env, term, (ErlNifUInt64*) &l))
+			{
+				IndexProperty_SetResultSetLimit(props, l);
+			}
+			else result = RT_Failure;
+			break;
 		default:
 			result = RT_Failure;
 	}
@@ -1030,9 +1089,13 @@ get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs,
 	return result;
 }
 
-// TODO change this to take a function ptr, so that intersects can be within etc
-ERL_NIF_TERM intersects(ErlNifEnv* env, idx_state *pState, 
-	GEOSGeometry* geom, int exact)
+ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState, 
+	GEOSGeometry* geom,
+	char (*pGEOS_Fun_r)(
+			GEOSContextHandle_t, 
+			const GEOSPreparedGeometry*,
+			const GEOSGeometry*
+		), int exact)
 {
 	ERL_NIF_TERM resultList;
 	const GEOSPreparedGeometry* pg = NULL;
@@ -1062,12 +1125,10 @@ ERL_NIF_TERM intersects(ErlNifEnv* env, idx_state *pState,
 		return enif_make_tuple2(env, idx_atoms.error, 
 		  enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
 	}
-
 	free(mins);
 	free(maxs);
 
 	resultList = enif_make_list(env, 0);
-
 
 	for (uint64_t i = 0; i < nResults; i++)
 	{
@@ -1088,13 +1149,13 @@ ERL_NIF_TERM intersects(ErlNifEnv* env, idx_state *pState,
 			{
 				if (exact)
 				{
-					// parse item WKB and test intersection exactly
+					// parse item WKB and test function exactly
 					wkb = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
 												data + doc_len,
 												len - doc_len);
 					if (wkb != NULL)
 					{	
-						if (GEOSPreparedIntersects_r(pState->geosCtx,
+						if ((*pGEOS_Fun_r)(pState->geosCtx,
 										pg, wkb))
 						{
 							memcpy(bin.data, data, doc_len - 1);

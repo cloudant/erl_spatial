@@ -12,4 +12,4 @@ test:
 doc:
 	@./rebar doc
 
-.PHONY: compile clean test doc
+
