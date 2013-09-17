@@ -5,7 +5,7 @@ cd c_src
 if ! [ -d "geos-3.4.2" ];
 then
   wget http://download.osgeo.org/geos/geos-3.4.2.tar.bz2
-  tar -zxf geos-3.4.2.tar.bz2
+  tar -jxf geos-3.4.2.tar.bz2
 fi
 # both libspatialindex and CsMap will be using fixed version as of the next release
 if ! [ -d "libspatialindex" ];
