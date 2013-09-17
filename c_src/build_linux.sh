@@ -7,7 +7,7 @@ cd libspatialindex
 make
 
 cd ../geos-3.4.2
-./configure
+./configure --enable-shared
 make
 
 cd ../CsMap/Source
