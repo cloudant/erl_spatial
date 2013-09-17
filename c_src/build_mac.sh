@@ -1,0 +1,34 @@
+#!/bin/bash
+cd c_src
+
+cd libspatialindex
+./autogen.sh
+./configure
+make
+
+cd ../geos-3.4.2
+./configure CC=/usr/bin/clang CXX=/usr/bin/clang++
+make
+
+cd ../CsMap/Source
+cp ../../csEpsgStuff.cpp .
+cp ../../csepsgstuff.h ../Include/
+make -fLibrary.mak
+
+cd ../Dictionaries
+make -fCompiler.mak
+if ! [ -d "../DictOut" ];
+then
+  mkdir ../DictOut
+fi
+
+# simulate a key press
+echo | ./CS_Comp . .
+mv *.CSD ../DictOut
+
+cd ../../..
+
+
+
+
+
