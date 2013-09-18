@@ -12,6 +12,7 @@ make
 
 cd ../CsMap/Source
 cp ../../csEpsgStuff.cpp .
+cp ../../Library.mak .
 cp ../../csepsgstuff.h ../Include
 make -fLibrary.mak
 
