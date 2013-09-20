@@ -18,14 +18,14 @@ make -fLibrary.mak
 
 cd ../Dictionaries
 make -fCompiler.mak
-if ! [ -d "../DictOut" ];
+if ! [ -d "../../../priv/CsDict" ];
 then
-  mkdir ../DictOut
+  mkdir ../../../priv/CsDict
 fi
 
 # simulate a key press
 echo | ./CS_Comp . .
-mv *.CSD ../DictOut
+cp -R * ../../../priv/CsDict
 
 cd ../../..
 

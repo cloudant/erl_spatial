@@ -11,6 +11,7 @@
 //  the License.
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdarg.h>
 
 #include "erl_spatial.h"
@@ -104,6 +105,8 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 	ErlNifResourceFlags flags = 
 				(ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
 	ErlNifResourceType* res;
+	char* pszCsMapDir;
+	char resolvedPath[MAXBUFLEN];
 
 	res = enif_open_resource_type(env, NULL, "index_type", idx_state_dtor,
 																 flags, NULL);
@@ -124,7 +127,18 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 
 		// initialise CS Map library to use environment variable
 		// CS_MAP_DIR for data dictionaries
-		CS_altdr(0);
+		pszCsMapDir = getenv("CS_MAP_DIR");
+		if (pszCsMapDir == NULL)
+		{
+			// set default which is used in testing
+			realpath("../priv/CsDict", resolvedPath);
+			CS_altdr(resolvedPath);
+		}
+		else
+		{
+			CS_altdr(pszCsMapDir);
+		}
+
 		CS_init(0);
 	
 		return 0;
