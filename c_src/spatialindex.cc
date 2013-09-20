@@ -106,7 +106,6 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 				(ErlNifResourceFlags)(ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER);
 	ErlNifResourceType* res;
 	char* pszCsMapDir;
-	char resolvedPath[MAXBUFLEN];
 
 	res = enif_open_resource_type(env, NULL, "index_type", idx_state_dtor,
 																 flags, NULL);
@@ -131,8 +130,10 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 		if (pszCsMapDir == NULL)
 		{
 			// set default which is used in testing
-			realpath("../priv/CsDict", resolvedPath);
-			CS_altdr(resolvedPath);
+			char* realPath = realpath("../priv/CsDict", 0);
+			CS_altdr(realPath);
+			if (realPath)
+				free(realPath);
 		}
 		else
 		{
