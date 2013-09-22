@@ -131,8 +131,6 @@ load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 		{
 			// set default which is used in testing
 			char* realPath = realpath("../priv/CsDict", 0);
-			fprintf(stdout, "CSPATH %s\n", realPath);
-			fflush(stdout);
 			CS_altdr(realPath);
 			if (realPath)
 				free(realPath);
