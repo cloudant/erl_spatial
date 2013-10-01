@@ -358,7 +358,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	GEOSGeometry* geom = NULL;
-	int functCode = NULL;
+	int functCode = 0;
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
@@ -495,23 +495,24 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 			if (get_min_max_tuple(env, mins, maxs, min_tuple,
 													max_tuple, min_dims) 
-													!= RT_None);
-
-			// make a bbox from the coordinates and call intersects
-			cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
-			for (int i = 0; i < min_dims; i++)
+													== RT_None)
 			{
-				GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
-					cs, 0, i, mins[i]);
-				GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
-					cs, 1, i, maxs[i]);
-			}
+				// make a bbox from the coordinates and call intersects
+				cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
+				for (int i = 0; i < min_dims; i++)
+				{
+					GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
+						cs, 0, i, mins[i]);
+					GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
+						cs, 1, i, maxs[i]);
+				}
 
-			// create an envelope of the min / max linestring
-			// coordinates are now owned by linestring
-			ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);
-			geom = GEOSEnvelope_r(pState->geosCtx, ls);
-			GEOSGeom_destroy_r(pState->geosCtx, ls);
+				// create an envelope of the min / max linestring
+				// coordinates are now owned by linestring
+				ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);
+				geom = GEOSEnvelope_r(pState->geosCtx, ls);
+				GEOSGeom_destroy_r(pState->geosCtx, ls);
+			}
 		}
 
 		enif_get_int(env, argv[3], &functCode);
