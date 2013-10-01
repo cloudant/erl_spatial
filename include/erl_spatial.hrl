@@ -37,6 +37,8 @@
 -define(IDX_INDEXID, 23).
 -define(IDX_RESULTLIMIT, 24).
 
+-define(IDX_DEFAULTLIMIT, 200).
+
 
 % RTIndexType
 -define(IDX_RTREE, 0).

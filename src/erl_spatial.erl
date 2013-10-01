@@ -15,7 +15,7 @@
 
 -on_load(init/0).
 
--export([index_create/0, index_create/1, index_create/2, 
+-export([index_create/0, index_create/1,
 			index_insert/3, index_insert/4,
 			index_intersects_count/3, index_intersects_mbr/3, index_intersects_mbr/5,
 			index_intersects/2, index_intersects/4, index_intersects/3, index_intersects/5,
@@ -34,17 +34,11 @@
 			index_destroy/1, index_flush/1, sidx_version/0, geos_version/0]).
 
 index_create() ->
-	index_create([{?IDX_STORAGE, ?IDX_MEMORY}]).
+	index_create([{?IDX_STORAGE, ?IDX_MEMORY},
+		{?IDX_RESULTLIMIT, ?IDX_DEFAULTLIMIT}]).
 
 index_create(_Props) ->
 	erlang:nif_error(not_loaded).
-
-index_create(FileName, CRS) when is_binary(FileName) ->
-	index_create(binary_to_list(FileName), CRS);
-
-index_create(FileName, _CRS) ->
-	% TODO include CRS to support on the fly reprojection
-	index_create([{?IDX_FILENAME, FileName}]).
 
 % libspatialindex call
 index_intersects_count(_Idx, _Min, _Max) ->
