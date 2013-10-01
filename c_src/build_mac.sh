@@ -18,10 +18,9 @@ make -fLibrary.mak
 
 cd ../Dictionaries
 make -fCompiler.mak
-if ! [ -d "../../../priv/CsDict" ];
-then
-  mkdir ../../../priv/CsDict
-fi
+
+rm -rf ../../../priv/CsDict
+mkdir ../../../priv/CsDict
 
 # simulate a key press
 echo | ./CS_Comp . .
