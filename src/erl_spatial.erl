@@ -53,7 +53,7 @@ index_intersects_mbr(Idx, Min, Max) ->
 index_intersects_mbr(Idx, Min, Max, ReqCrs, DbCrs) ->
 	index_spatial_function(Idx, Min, Max, ReqCrs, DbCrs, ?ST_INTERSECTS_MBR).
 
-% Request is either WKT or {_Lon, _Lat, _Radius} or Min/Max
+% Request is either WKT or {_X, _Y, _Radius} or Min/Max
 index_intersects(Idx, Request) ->
 	index_intersects(Idx, Request, 0, 0).
 
@@ -177,12 +177,11 @@ index_within(Idx, Request) ->
 index_within(Idx, Request, ReqCrs, DbCrs) ->
 	index_spatial_function(Idx, Request, ReqCrs, DbCrs, ?ST_WITHIN).
 
-index_within(Idx, Min, Max) ->
-	index_within(Idx, Min, Max, 0, 0).
-
 index_within(Idx, Min, Max, ReqCrs, DbCrs) ->
 	index_spatial_function(Idx, Min, Max, ReqCrs, DbCrs, ?ST_WITHIN).
 
+index_within(Idx, Min, Max) ->
+	index_within(Idx, Min, Max, 0, 0).
 
 index_spatial_function(_Idx, _Request, _ReqCrs, _DbCrs, _FunName) ->
 	erlang:nif_error(not_loaded).

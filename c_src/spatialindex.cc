@@ -26,6 +26,8 @@
 
 #define MAXBUFLEN	1024
 
+#define DEFAULT_CRS "urn:ogc:def:crs:EPSG::4326"
+
 static ErlNifResourceType *index_type = NULL;
 static ErlNifMutex* csMapMutex = NULL;
 
@@ -79,6 +81,9 @@ get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom,
 
 int 
 get_number(ErlNifEnv* env, const ERL_NIF_TERM* tuple, int pos, double* v);
+
+GEOSGeometry*
+reproject_geom(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom, long src, long target);
 
 ERL_NIF_TERM
 spatial_function(ErlNifEnv* env, idx_state *pState, 
@@ -359,6 +364,8 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	idx_state *pState;
 	GEOSGeometry* geom = NULL;
 	int functCode = 0;
+	char szDbCrs[MAXBUFLEN];
+	char szReqCrs[MAXBUFLEN];
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
@@ -368,8 +375,16 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	case 5: 
 		int cnt;
 		const ERL_NIF_TERM* tuple;
-		// output crs is optional and assumed to EPSG:4326 LL if not specified
-		// either a wkt string or {lat, lon, radius(m), crs} tuple
+
+		if (enif_get_string(env, argv[3], szDbCrs, 
+			MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+		{
+			// do nothing
+		}
+		else
+			strcpy(szDbCrs, DEFAULT_CRS);
+
+		// either a wkt string or {lat, lon, radius(m)} tuple
 		// calculate mbr and call geos function with exact argument
 		// if a tuple then radius else wkt
 		if (!enif_get_tuple(env, argv[1], &cnt, &tuple))
@@ -380,21 +395,43 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			{
 				GEOSWKTReader* wktRdr = GEOSWKTReader_create_r(pState->geosCtx);
 				geom = GEOSWKTReader_read_r(pState->geosCtx, wktRdr, szWkt);
+				
+				// try to reproject the request geometry if possible
+				if (enif_get_string(env, argv[2], szReqCrs, 
+					MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+				{
+						GEOSGeometry* pProjGeom =
+							reproject_geom(pState->geosCtx,
+				 				geom, get_crs(szReqCrs), get_crs(szDbCrs));
+						if (pProjGeom != NULL)
+						{
+							GEOSGeom_destroy_r(pState->geosCtx, geom);
+							geom = pProjGeom;
+						}
+						else
+						{
+							// failure
+							GEOSGeom_destroy_r(pState->geosCtx, geom);
+							geom = NULL;
+						}
+				}
+
 				GEOSWKTReader_destroy_r(pState->geosCtx, wktRdr);
-			}			
+			}
 		}
 		else
 		{
-			// radius, make a pt and buffer, radius is in metres
+			// radius, make a pt and buffer
 			if (cnt == 3)
 			{
 				double dist;
-				char szDbCrs[MAXBUFLEN];
-				long EpsgCode;
+
+				long EpsgCode, reqEpsgCode;
 			 	char csSrcDefn[MAXBUFLEN];
 				const char* csKeyName = "LL";
 				double xyz[3];
 				GEOSGeometry* pt;
+				int bReprojected = 1;
 
 				if  ((get_number(env, tuple, 0, &xyz[0]) == RT_None)
 					&& (get_number(env, tuple, 1, &xyz[1]) == RT_None)
@@ -402,23 +439,35 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				{	
 					xyz[2] = 0.0;
 
-					if (
-						enif_get_string(env, argv[3], szDbCrs, 
-							MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+					if (enif_get_string(env, argv[3], szDbCrs, 
+						MAXBUFLEN, ERL_NIF_LATIN1) > 0)
 					{
-						// do nothing we have the full crs defn.
+						// do nothing
 					}
 					else
-						strcpy(szDbCrs, "urn:ogc:def:crs:EPSG::4326");
+						strcpy(szDbCrs, DEFAULT_CRS);
 
 					// only support EPSG
-					// TODO add a special case for MGRS
 					enif_mutex_lock(csMapMutex);
+
+					// if there is a request crs we need to convert this 
+					// xyz point to the src crs
 					EpsgCode = get_crs(szDbCrs);
 					strcpy(csSrcDefn, CSepsg2adskCS(EpsgCode));
 
+					if (enif_get_string(env, argv[2], szReqCrs, 
+						MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+					{
+						reqEpsgCode = get_crs(szReqCrs);
+
+						if (CS_cnvrt(CSepsg2adskCS(reqEpsgCode), csSrcDefn, xyz) != 0)
+						{
+							bReprojected = 0;
+						}
+					}
+
 					// convert the coordinates
-					if (CS_cnvrt(csSrcDefn, csKeyName, xyz) == 0)
+					if ((bReprojected == 1) && (CS_cnvrt(csSrcDefn, csKeyName, xyz) == 0))
 					{
 						double eRadius; // metres
 						double eSq;
@@ -488,6 +537,15 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		enif_get_tuple(env, argv[1], &min_dims, &min_tuple);
 		enif_get_tuple(env, argv[2], &max_dims, &max_tuple);
 
+		if (enif_get_string(env, argv[4], szDbCrs, 
+			MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+		{
+			// do nothing
+		}
+		else
+			strcpy(szDbCrs, DEFAULT_CRS);
+
+
 		if (min_dims == max_dims)
 		{
 			double mins[min_dims];
@@ -511,6 +569,21 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				// coordinates are now owned by linestring
 				ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);
 				geom = GEOSEnvelope_r(pState->geosCtx, ls);
+
+				// try to reproject the request geometry if possible
+				if (enif_get_string(env, argv[3], szReqCrs, 
+					MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+				{
+					GEOSGeometry* pProjGeom =
+						reproject_geom(pState->geosCtx,
+			 				geom, get_crs(szReqCrs), get_crs(szDbCrs));
+					if (pProjGeom != NULL)
+					{
+						GEOSGeom_destroy_r(pState->geosCtx, geom);
+						geom = pProjGeom;
+					}
+				}
+
 				GEOSGeom_destroy_r(pState->geosCtx, ls);
 			}
 		}
@@ -1063,6 +1136,68 @@ get_min_max(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom,
 	}
 	else 
 		return RT_Failure;
+}
+GEOSGeometry* 
+reproject_geom(GEOSContextHandle_t geosCtx, const GEOSGeometry* geom, long src, long target)
+{
+	const GEOSCoordSequence* cs;
+	GEOSCoordSequence* clone;
+ 	char csSrcDefn[MAXBUFLEN];
+ 	char csTgtDefn[MAXBUFLEN];
+	double xyz[3];
+	const GEOSGeometry* g;
+	unsigned int nDims = 0;
+
+	if (target != src)
+	{
+		int type;
+		type = GEOSGeomTypeId_r(geosCtx, geom);
+		// polygon or linestring
+		switch(type)
+		{
+			case GEOS_POLYGON:
+				g = GEOSGetExteriorRing_r(geosCtx, geom);
+				cs = GEOSGeom_getCoordSeq_r(geosCtx, g);
+				break;
+			default:
+				cs = GEOSGeom_getCoordSeq_r(geosCtx, geom);
+		}
+
+		// reproject coord seq,
+		// only support EPSG
+		enif_mutex_lock(csMapMutex);
+
+		strcpy(csSrcDefn, CSepsg2adskCS(src));
+		strcpy(csTgtDefn, CSepsg2adskCS(target));
+		GEOSCoordSeq_getSize_r(geosCtx, cs, &nDims);
+
+		// convert the coordinates
+		for (int i = 0; i < nDims; i++)
+		{
+			GEOSCoordSeq_getX_r(geosCtx, cs, i, &xyz[0]);
+			GEOSCoordSeq_getY_r(geosCtx, cs, i, &xyz[1]);
+			GEOSCoordSeq_getZ_r(geosCtx, cs, i, &xyz[2]);
+			
+			if (CS_cnvrt(csSrcDefn, csTgtDefn, xyz) != 0)
+			{
+				enif_mutex_unlock(csMapMutex);
+				return NULL;
+			}
+
+			clone = GEOSCoordSeq_clone_r(geosCtx, cs);
+
+			GEOSCoordSeq_setX_r(geosCtx, clone, i, xyz[0]);
+			GEOSCoordSeq_setY_r(geosCtx, clone, i, xyz[1]);
+			GEOSCoordSeq_setZ_r(geosCtx, clone, i, xyz[2]);
+
+		}
+
+		enif_mutex_unlock(csMapMutex);
+
+		return GEOSGeom_createLineString_r(geosCtx, clone);
+	}
+
+	return NULL;
 }
 
 int
