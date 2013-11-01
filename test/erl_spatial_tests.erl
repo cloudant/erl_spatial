@@ -133,6 +133,10 @@ index_test() ->
 	?assertEqual({ok, [<<"pt2">>, <<"pt1">>]},
 		erl_spatial:index_intersects(Idx, {0, 0, 120})),
 
+	% test ellipse arc polygon
+	?assertEqual({ok, [<<"pt1">>]},
+		erl_spatial:index_intersects(Idx, {0, 0, 100, 100})),
+
 	% real tests
 	% CO ski area, lat lon
 	?assertEqual(ok, erl_spatial:index_insert(Idx, <<"ski">>,

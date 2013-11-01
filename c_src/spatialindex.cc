@@ -20,6 +20,18 @@
 #include "spatialindex/capi/sidx_api.h"
 // geos - http://trac.osgeo.org/geos/
 #include "geos_c.h"
+
+// break with c api for ellipse support
+#include "geos/geom/PrecisionModel.h"
+#include "geos/geom/GeometryFactory.h"
+#include "geos/util/GeometricShapeFactory.h"
+#include "geos/geom/Coordinate.h"
+#include "geos/geom/Polygon.h"
+#include <geos/io/WKTWriter.h>
+
+#include <sstream>
+#include <iomanip>
+
 // csmap - http://trac.osgeo.org/csmap/
 #include "cs_map.h"
 #include "csNameMapperSupport.h"
@@ -422,104 +434,227 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		else
 		{
 			// radius, make a pt and buffer
-			if (cnt == 3)
+			switch (cnt)
 			{
-				double dist;
+				case 3: // circle
+				{
+					double dist;
 
-				long EpsgCode, reqEpsgCode;
-			 	char csSrcDefn[MAXBUFLEN];
-				const char* csKeyName = "LL";
-				double xyz[3];
-				GEOSGeometry* pt;
-				int bReprojected = 1;
+					long EpsgCode, reqEpsgCode;
+				 	char csSrcDefn[MAXBUFLEN];
+					const char* csKeyName = "LL";
+					double xyz[3];
+					GEOSGeometry* pt;
+					int bReprojected = 1;
 
-				if  ((get_number(env, tuple, 0, &xyz[0]) == RT_None)
-					&& (get_number(env, tuple, 1, &xyz[1]) == RT_None)
-					&& (get_number(env, tuple, 2, &dist)) == RT_None)
-				{	
-					xyz[2] = 0.0;
+					if  ((get_number(env, tuple, 0, &xyz[0]) == RT_None)
+						&& (get_number(env, tuple, 1, &xyz[1]) == RT_None)
+						&& (get_number(env, tuple, 2, &dist)) == RT_None)
+					{	
+						xyz[2] = 0.0;
 
-					if (enif_get_string(env, argv[3], szDbCrs, 
-						MAXBUFLEN, ERL_NIF_LATIN1) > 0)
-					{
-						// do nothing
-					}
-					else
-						strcpy(szDbCrs, DEFAULT_CRS);
-
-					// only support EPSG
-					enif_mutex_lock(csMapMutex);
-
-					// if there is a request crs we need to convert this 
-					// xyz point to the src crs
-					EpsgCode = get_crs(szDbCrs);
-					strcpy(csSrcDefn, CSepsg2adskCS(EpsgCode));
-
-					if (enif_get_string(env, argv[2], szReqCrs, 
-						MAXBUFLEN, ERL_NIF_LATIN1) > 0)
-					{
-						reqEpsgCode = get_crs(szReqCrs);
-
-						if (CS_cnvrt(CSepsg2adskCS(reqEpsgCode), csSrcDefn, xyz) != 0)
+						if (enif_get_string(env, argv[3], szDbCrs, 
+							MAXBUFLEN, ERL_NIF_LATIN1) > 0)
 						{
-							bReprojected = 0;
+							// do nothing
 						}
-					}
+						else
+							strcpy(szDbCrs, DEFAULT_CRS);
 
-					// convert the coordinates
-					if ((bReprojected == 1) && (CS_cnvrt(csSrcDefn, csKeyName, xyz) == 0))
-					{
-						double eRadius; // metres
-						double eSq;
-						char csEllipsoid[MAXBUFLEN];
-						
-						if ((CS_getEllipsoidOf(csKeyName, csEllipsoid, MAXBUFLEN) == 0)
-							&& (CS_getElValues(csEllipsoid, &eRadius, &eSq) == 0))
+						// only support EPSG
+						enif_mutex_lock(csMapMutex);
+
+						// if there is a request crs we need to convert this 
+						// xyz point to the src crs
+						EpsgCode = get_crs(szDbCrs);
+						strcpy(csSrcDefn, CSepsg2adskCS(EpsgCode));
+
+						if (enif_get_string(env, argv[2], szReqCrs, 
+							MAXBUFLEN, ERL_NIF_LATIN1) > 0)
 						{
-							double xyz_result[3];	
+							reqEpsgCode = get_crs(szReqCrs);
 
-							// use the convenience method,
-							// azimuth is degrees from north
-	 						if (CS_azddll(eRadius, eSq, xyz, 90.0, dist,
-	 							xyz_result) == 0)
-	 						{
-	 							// convert back to original cs
-								if ((CS_cnvrt(csKeyName, csSrcDefn, xyz_result) == 0)
-									&& CS_cnvrt(csKeyName, csSrcDefn, xyz) == 0)
-								{
-									GEOSCoordSequence* cs;
-									GEOSBufferParams* bp = 
-											GEOSBufferParams_create_r(pState->geosCtx);
+							if (CS_cnvrt(CSepsg2adskCS(reqEpsgCode), csSrcDefn, xyz) != 0)
+							{
+								bReprojected = 0;
+							}
+						}
 
-									// create geometry which is a pt which is then buffered
-									cs = GEOSCoordSeq_create_r(pState->geosCtx, 1, 2);
-									GEOSCoordSeq_setX_r(pState->geosCtx,
-										cs, 0, xyz[0]);
-									GEOSCoordSeq_setY_r(pState->geosCtx,
-										cs, 0, xyz[1]);
-									// pt now owns cs
-									pt = GEOSGeom_createPoint_r(pState->geosCtx,
-												cs);
+						// convert the coordinates
+						if ((bReprojected == 1) && (CS_cnvrt(csSrcDefn, csKeyName, xyz) == 0))
+						{
+							double eRadius; // metres
+							double eSq;
+							char csEllipsoid[MAXBUFLEN];
+							
+							if ((CS_getEllipsoidOf(csKeyName, csEllipsoid, MAXBUFLEN) == 0)
+								&& (CS_getElValues(csEllipsoid, &eRadius, &eSq) == 0))
+							{
+								double xyz_result[3];	
 
-									if (pt != NULL)
-									{					
-										// buffer geom 
-										geom = GEOSBufferWithParams_r(
-											pState->geosCtx,
-											pt, 
-											bp,
-											fabs(xyz[0] - xyz_result[0])
-										);
+								// use the convenience method,
+								// azimuth is degrees from north
+		 						if (CS_azddll(eRadius, eSq, xyz, 90.0, dist,
+		 							xyz_result) == 0)
+		 						{
+		 							// convert back to original cs
+									if ((CS_cnvrt(csKeyName, csSrcDefn, xyz_result) == 0)
+										&& CS_cnvrt(csKeyName, csSrcDefn, xyz) == 0)
+									{
+										GEOSCoordSequence* cs;
+										GEOSBufferParams* bp = 
+												GEOSBufferParams_create_r(pState->geosCtx);
+
+										// create geometry which is a pt which is then buffered
+										cs = GEOSCoordSeq_create_r(pState->geosCtx, 1, 2);
+										GEOSCoordSeq_setX_r(pState->geosCtx,
+											cs, 0, xyz[0]);
+										GEOSCoordSeq_setY_r(pState->geosCtx,
+											cs, 0, xyz[1]);
+										// pt now owns cs
+										pt = GEOSGeom_createPoint_r(pState->geosCtx,
+													cs);
+
+										if (pt != NULL)
+										{					
+											// buffer geom 
+											geom = GEOSBufferWithParams_r(
+												pState->geosCtx,
+												pt, 
+												bp,
+												fabs(xyz[0] - xyz_result[0])
+											);
+										}
+										else
+											GEOSGeom_destroy_r(pState->geosCtx, pt);
+
+										GEOSBufferParams_destroy_r(pState->geosCtx, bp);
 									}
-									else
-										GEOSGeom_destroy_r(pState->geosCtx, pt);
+		 						}
+		 					}
+						}
+						enif_mutex_unlock(csMapMutex);
+					}	
+					break;	
+				}		
+				case 4: // ellipse, breaks geos C API
+				{
+					double x_range, y_range;
+					long EpsgCode, reqEpsgCode;
+				 	char csSrcDefn[MAXBUFLEN];
+					const char* csKeyName = "LL";
+					double xyz[3];
+					int bReprojected = 1;
+					
+					geos::geom::PrecisionModel *pm = new geos::geom::PrecisionModel();
+					geos::geom::GeometryFactory *global_factory = new  geos::geom::GeometryFactory(pm);;
+					geos::util::GeometricShapeFactory shapefactory(global_factory);
 
-									GEOSBufferParams_destroy_r(pState->geosCtx, bp);
-								}
-	 						}
-	 					}
+					// We do not need PrecisionMode object anymore, it has
+					// been copied to global_factory private storage
+					delete pm;
+						
+					if  ((get_number(env, tuple, 0, &xyz[0]) == RT_None)
+						&& (get_number(env, tuple, 1, &xyz[1]) == RT_None)
+						&& (get_number(env, tuple, 2, &x_range) == RT_None)
+						&& (get_number(env, tuple, 2, &y_range)) == RT_None)
+					{	
+						xyz[2] = 0.0;
+
+						if (enif_get_string(env, argv[3], szDbCrs, 
+							MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+						{
+							// do nothing
+						}
+						else
+							strcpy(szDbCrs, DEFAULT_CRS);
+
+						// only support EPSG
+						enif_mutex_lock(csMapMutex);
+
+						// if there is a request crs we need to convert this 
+						// xyz point to the src crs
+						EpsgCode = get_crs(szDbCrs);
+						strcpy(csSrcDefn, CSepsg2adskCS(EpsgCode));
+
+						// convert x, y to db crs
+						if (enif_get_string(env, argv[2], szReqCrs, 
+							MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+						{
+							reqEpsgCode = get_crs(szReqCrs);
+
+							if (CS_cnvrt(CSepsg2adskCS(reqEpsgCode), csSrcDefn, xyz) != 0)
+							{
+								bReprojected = 0;
+							}
+						}
+
+						// convert the coordinates
+						if ((bReprojected == 1) && (CS_cnvrt(csSrcDefn, csKeyName, xyz) == 0))
+						{
+							// break with GEOS C API and create an Arc Polygon, not as accurate as radius, not peformed on ellipsoid
+							// workaround to write to wkb and then read back with c api.
+							// TODO use WKB not WKT
+							geos::geom::Polygon* poly;
+							std::string s;
+							geos::io::WKTWriter *wktWriter = new geos::io::WKTWriter();
+
+							// calculate x_range and y_range on the earth surface
+							double eRadius; // metres
+							double eSq;
+							char csEllipsoid[MAXBUFLEN];
+							
+							if ((CS_getEllipsoidOf(csKeyName, csEllipsoid, MAXBUFLEN) == 0)
+								&& (CS_getElValues(csEllipsoid, &eRadius, &eSq) == 0))
+							{
+								// holds the distance along x,y axis for the ellipse
+								double xyz_result_x[3];	
+								double xyz_result_y[3];	
+
+								// use the convenience method,
+								// azimuth is degrees from north
+		 						if ((CS_azddll(eRadius, eSq, xyz, 90.0, x_range,
+		 							xyz_result_x) == 0) &&
+		 							(CS_azddll(eRadius, eSq, xyz, 0.0, y_range, xyz_result_y) == 0))
+		 						{
+		 							// convert back to original cs
+									if ((CS_cnvrt(csKeyName, csSrcDefn, xyz_result_x) == 0)
+										&& (CS_cnvrt(csKeyName, csSrcDefn, xyz_result_y) == 0) &&
+										(CS_cnvrt(csKeyName, csSrcDefn, xyz) == 0))
+									{
+										x_range = fabs(xyz[0] - xyz_result_x[0]);
+										y_range = fabs(xyz[1] - xyz_result_y[1]);
+
+										// geos c
+										GEOSWKTReader* wktReader;
+										shapefactory.setCentre(geos::geom::Coordinate(xyz[0], xyz[1]));
+										shapefactory.setWidth(x_range);
+										shapefactory.setHeight(y_range);
+										poly = shapefactory.createCircle();
+
+										// serialize to wkt
+										s = wktWriter->write(poly);
+										delete wktWriter;
+
+										wktReader = GEOSWKTReader_create_r(pState->geosCtx);
+										geom = GEOSWKTReader_read_r(pState->geosCtx, wktReader,
+											s.c_str());
+
+										GEOSWKTReader_destroy_r(pState->geosCtx, wktReader);
+									}
+		 						}
+		 					}
+						}
+
+						enif_mutex_unlock(csMapMutex);
 					}
-					enif_mutex_unlock(csMapMutex);
+
+					delete global_factory;
+					break;
+				}
+				default:
+				{ 
+					geom = NULL;
 				}
 			}
 		}
@@ -602,7 +737,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		// switch function call
 		ERL_NIF_TERM result;
 		// all geometry operations are in the coordinate system of the DB
-		 switch (functCode)
+		switch (functCode)
 		{
 			case 0:
 			{
