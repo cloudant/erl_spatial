@@ -187,6 +187,31 @@ index_limit_test() ->
  		{0.5, 0.5}, {0.5, 0.5})).
 
 
+ index_destroy_test() ->
+    {ok, Idx} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_MEMORY}]),
+    Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
+    ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"point">>, Pt)),
+    erl_spatial:index_flush(Idx),
+	erl_spatial:index_destroy(Idx).
+
+ index_persist_test() ->
+ 	Tmp = filename:absname("test"),
+    {ok, Idx} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_DISK},
+    	{?IDX_FILENAME, Tmp},
+    	{?IDX_OVERWRITE, 1}]),
+
+    % simple test of index preservation
+    Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
+    ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"point">>, Pt)),
+    erl_spatial:index_flush(Idx),
+    {ok, Idx2} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_DISK},
+    	{?IDX_FILENAME, Tmp},
+    	{?IDX_OVERWRITE, 0}]),
+	?assertEqual({ok, 1}, erl_spatial:index_intersects_count(Idx, 
+ 													{0.5, 0.5}, {0.5, 0.5})),
+	erl_spatial:index_destroy(Idx),
+	erl_spatial:index_destroy(Idx2).
+
 % benchmarks - tests to make sure everything is going faster enough
 % currently disabled and not maintained, here for reference
 % The python benchmarks don't use wkb_writer or geos

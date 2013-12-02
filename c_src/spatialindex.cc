@@ -873,7 +873,10 @@ index_destroy(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
 
-	Index_Destroy(pState->index);
+	if (pState->index)
+		Index_Destroy(pState->index);
+
+	pState->index = NULL;
 
 	return idx_atoms.ok;
 }
@@ -1149,7 +1152,7 @@ RTError set_property(ErlNifEnv* env, int propType, ERL_NIF_TERM term,
 			{
 				IndexProperty_SetOverwrite(props, uv);
 			}
-			else result = RT_Failure;				
+			else result = RT_Failure;
 			break;
 		case NearMinimumOverlapFactor:
 			if (enif_get_uint(env, term, &uv))
