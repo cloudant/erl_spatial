@@ -38,7 +38,7 @@ get_centre(Json) ->
 	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
 	get_centre(WKB, nif).
 
-get_centre(WKB, nif) ->
+get_centre(_WKB, nif) ->
 	erlang:nif_error(not_loaded).
 
 index_create() ->
