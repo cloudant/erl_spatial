@@ -31,7 +31,15 @@
 			index_bounds/1, index_delete/3, index_delete/4, 
 			index_get_resultset_limit/1, index_set_resultset_limit/2,
 			index_get_resultset_offset/1, index_set_resultset_offset/2,
-			index_destroy/1, index_flush/1, sidx_version/0, geos_version/0]).
+			index_destroy/1, index_flush/1, sidx_version/0, geos_version/0,
+			get_centre/1, get_centre/2]).
+
+get_centre(Json) ->
+	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
+	get_centre(WKB, nif).
+
+get_centre(WKB, nif) ->
+	erlang:nif_error(not_loaded).
 
 index_create() ->
 	index_create([{?IDX_STORAGE, ?IDX_MEMORY},

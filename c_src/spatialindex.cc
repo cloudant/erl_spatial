@@ -52,7 +52,7 @@ struct idx_state_t
 typedef struct idx_state_t idx_state;
 
 static struct {
-    ERL_NIF_TERM ok;
+    ERL_NIF_TERM ok;	
     ERL_NIF_TERM error;
 } idx_atoms;
 
@@ -179,6 +179,62 @@ unload(ErlNifEnv* env, void* priv)
     }
 
     return;
+}
+
+ERL_NIF_TERM 
+get_centre(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+	ErlNifBinary wkb;
+	ERL_NIF_TERM result;
+	GEOSContextHandle_t geosCtx;
+	GEOSGeometry* geom = NULL;
+	GEOSGeometry* ct = NULL;
+
+    // initialise geos on every get centre call
+	geosCtx = initGEOS_r(notice, error);
+	GEOS_setWKBByteOrder_r(geosCtx, GEOS_WKB_XDR);
+
+	if (enif_inspect_binary(env, argv[0], &wkb) &&
+		(geom = GEOSGeomFromWKB_buf_r(geosCtx, 
+			wkb.data, wkb.size)) != NULL)
+	{
+		if ((ct = GEOSGetCentroid_r(geosCtx, geom)) != NULL)
+		{
+			double x, y;
+			const GEOSCoordSequence* coords;
+
+			coords = GEOSGeom_getCoordSeq_r(geosCtx, ct);
+			
+			if (GEOSCoordSeq_getX_r(geosCtx, coords, 0, &x) &&
+				GEOSCoordSeq_getY_r(geosCtx, coords, 0, &y))
+			{
+				result = enif_make_tuple2(env, idx_atoms.ok, 
+					enif_make_tuple2(env, enif_make_double(env, x), enif_make_double(env, y)));
+			}
+			else
+				result = enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env, "Unable to get centroid coordinates",
+						ERL_NIF_LATIN1));
+		}
+		else
+			result = enif_make_tuple2(env, idx_atoms.error,
+				enif_make_string(env, "Unable to calculate centroid",
+					ERL_NIF_LATIN1));
+	}
+	else
+		result = enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env, "Unable to parse geometry",
+						ERL_NIF_LATIN1));
+
+	if (geom != NULL)
+		GEOSGeom_destroy_r(geosCtx, geom);
+
+	if (ct != NULL)
+		GEOSGeom_destroy_r(geosCtx, ct);
+
+	finishGEOS_r(geosCtx);
+
+	return result;
 }
 
 ERL_NIF_TERM

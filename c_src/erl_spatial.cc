@@ -20,6 +20,7 @@ reload(ErlNifEnv* env, void** priv, ERL_NIF_TERM info)
 
 //  name, arity and function pointer
 static ErlNifFunc nif_funcs[] = {
+    {"get_centre", 2, get_centre},
     {"index_create", 1, index_create},
     {"index_insert", 4, index_insert_data},
     {"index_intersects_count", 3, index_intersects_count},

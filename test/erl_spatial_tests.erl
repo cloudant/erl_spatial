@@ -17,6 +17,11 @@
 -define(COUNT, 30000).
 -define(BOUND, 6000000).
 
+
+centre_test() ->
+	Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
+  	?assertEqual({ok, {0.5, 0.5}}, erl_spatial:get_centre(Pt)).
+
 index_create_test() ->
 	% test create an in-memory r-tree
 	?assertEqual({ok, <<>>}, erl_spatial:index_create()).

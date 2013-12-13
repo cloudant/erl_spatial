@@ -45,6 +45,8 @@ int load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info);
 int upgrade(ErlNifEnv* env, void** priv, void** old_priv, ERL_NIF_TERM info);
 void unload(ErlNifEnv* env, void* priv);
 
+ERL_NIF_TERM get_centre(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
+
 ERL_NIF_TERM index_create(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]);
 
 ERL_NIF_TERM index_insert_data(ErlNifEnv* env, int argc,
