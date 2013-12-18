@@ -199,8 +199,20 @@ index_limit_test() ->
     erl_spatial:index_flush(Idx),
 	erl_spatial:index_destroy(Idx).
 
+index_null_test() ->
+    % test that we get this far
+	Tmp = filename:absname("test1"),
+    {ok, Idx} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_DISK},
+    	{?IDX_FILENAME, Tmp},
+    	{?IDX_OVERWRITE, 1}]),
+    {ok, Idx2} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_DISK},
+    	{?IDX_FILENAME, Tmp},
+    	{?IDX_OVERWRITE, 0}]),
+	erl_spatial:index_destroy(Idx),
+	erl_spatial:index_destroy(Idx2).
+
  index_persist_test() ->
- 	Tmp = filename:absname("test"),
+ 	Tmp = filename:absname("test2"), 	
     {ok, Idx} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_DISK},
     	{?IDX_FILENAME, Tmp},
     	{?IDX_OVERWRITE, 1}]),
