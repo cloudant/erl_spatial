@@ -1,4 +1,8 @@
 #!/bin/bash
+
+export CC=/usr/bin/clang
+export CXX=/usr/bin/clang++
+
 cd c_src
 
 cd libspatialindex
@@ -7,7 +11,7 @@ cd libspatialindex
 make
 
 cd ../geos-3.4.2
-./configure CC=/usr/bin/clang CXX=/usr/bin/clang++
+./configure
 make
 
 cd ../CsMap/Source
@@ -20,7 +24,7 @@ cd ../Dictionaries
 make -fCompiler.mak
 
 rm -rf ../../../priv/CsDict
-mkdir ../../../priv/CsDict
+mkdir -p ../../../priv/CsDict
 
 # simulate a key press
 echo | ./CS_Comp . .

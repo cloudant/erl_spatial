@@ -20,7 +20,7 @@ cd ../Dictionaries
 make -fCompiler.mak
 
 rm -rf ../../../priv/CsDict
-mkdir ../../../priv/CsDict
+mkdir -p ../../../priv/CsDict
 
 # simulate a key press
 echo | ./CS_Comp . .
