@@ -64,16 +64,18 @@ notice(const char *fmt, ...) {
     vfprintf( stdout, fmt, ap);
     va_end(ap);
     fprintf( stdout, "\n" );
+    fflush(stdout);
 }
 
 void
 error(const char *fmt, ...) {
 	va_list ap;
-    fprintf( stdout, "ERROR: ");
+  fprintf( stdout, "ERROR: ");
 	va_start (ap, fmt);
-    vfprintf( stdout, fmt, ap);
-    va_end(ap);
-    fprintf( stdout, "\n" );
+  vfprintf( stdout, fmt, ap);
+  va_end(ap);
+  fprintf( stdout, "\n" );
+	fflush(stdout);
 }
 
 void
@@ -315,7 +317,7 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	unsigned char* pszDocId;
 	ErlNifBinary bin, wkb;
 	GEOSGeometry* geom;
-	int dims;
+	uint32_t dims;
 	int doc_len;
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
@@ -342,7 +344,10 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		double* maxs;
 		unsigned char* pData;
 
-		dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, geom);
+		// dims is dependent on the index used
+		IndexPropertyH props = Index_GetProperties(pState->index);
+		dims = IndexProperty_GetDimension(props);
+
 		mins = (double*)malloc(dims * sizeof(double));
 		maxs = (double*)malloc(dims * sizeof(double));
 		get_min_max(pState->geosCtx, geom, mins, maxs, dims);
@@ -420,8 +425,16 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 	if (Index_Intersects_count(pState->index, mins, 
 								maxs, min_dims, &nResults) != RT_None)
-		return enif_make_tuple2(env, idx_atoms.error, 
-			enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
+	{
+			char buf[MAXBUFLEN];
+			char* pszErrorMsg = Error_GetLastErrorMsg();
+			sprintf(buf, "Unable to execute query: %s", pszErrorMsg);
+			free(pszErrorMsg);
+
+			return enif_make_tuple2(env, idx_atoms.error, 
+				enif_make_string(env, 
+					buf, ERL_NIF_LATIN1));
+	}
 
 	return enif_make_tuple2(env, idx_atoms.ok,  enif_make_uint64(env, nResults));
 }
@@ -689,6 +702,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 										poly = shapefactory.createCircle();
 
 										// serialize to wkt
+										wktWriter->setOutputDimension(3);
 										s = wktWriter->write(poly);
 										delete wktWriter;
 
@@ -944,7 +958,7 @@ index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	unsigned char* pszDocId;
 	ErlNifBinary bin, wkb;
 	GEOSGeometry* geom;
-	int dims;
+	uint32_t dims;
  
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
@@ -968,7 +982,10 @@ index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		double* mins;
 		double* maxs;
 
-		dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, geom);
+		// dims is dependent on the index used
+		IndexPropertyH props = Index_GetProperties(pState->index);
+		dims = IndexProperty_GetDimension(props);
+
 		mins = (double*)malloc(dims * sizeof(double));
 		maxs = (double*)malloc(dims * sizeof(double));
 
@@ -1446,7 +1463,7 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 	const GEOSPreparedGeometry* pg = NULL;
 	uint64_t nResults;
 	IndexItemH* items;
-	int dims;
+	uint32_t dims;
 	double* mins;
 	double* maxs;
 
@@ -1454,11 +1471,14 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 		pg = GEOSPrepare_r(pState->geosCtx, geom);
 	
 	// calculate mins and maxs from input geometry
-	dims = GEOSGeom_getCoordinateDimension_r(pState->geosCtx, geom);
+	// dims is dependent on the index used
+	IndexPropertyH props = Index_GetProperties(pState->index);
+	dims = IndexProperty_GetDimension(props);
+
 	mins = (double*)malloc(dims * sizeof(double));
 	maxs = (double*)malloc(dims * sizeof(double));
 	get_min_max(pState->geosCtx, geom, mins, maxs, dims);
-
+	
 	if (Index_Intersects_obj(pState->index, mins, maxs,
 							 dims, &items, &nResults) != RT_None)
 	{
@@ -1467,8 +1487,14 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 		if (exact)
 			GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
 
+		char buf[MAXBUFLEN];
+		char* pszErrorMsg = Error_GetLastErrorMsg();
+		sprintf(buf, "Unable to execute query : %s", pszErrorMsg);
+		free(pszErrorMsg);
+
 		return enif_make_tuple2(env, idx_atoms.error, 
-		  enif_make_string(env, "unable to execute query", ERL_NIF_LATIN1));
+			enif_make_string(env, 
+				buf, ERL_NIF_LATIN1));
 	}
 	free(mins);
 	free(maxs);
@@ -1499,7 +1525,7 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 												data + doc_len,
 												len - doc_len);
 					if (wkb != NULL)
-					{	
+					{
 						if ((*pGEOS_Fun_r)(pState->geosCtx,
 										pg, wkb))
 						{
@@ -1561,9 +1587,14 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 		}
 		else
 		{
+			char buf[MAXBUFLEN];
+			char* pszErrorMsg = Error_GetLastErrorMsg();
+			sprintf(buf, "Unable to execute query: %s", pszErrorMsg);
+			free(pszErrorMsg);
+
 			return enif_make_tuple2(env, idx_atoms.error, 
-				enif_make_string(env, "unable to execute query", 
-					ERL_NIF_LATIN1));
+				enif_make_string(env, 
+					buf, ERL_NIF_LATIN1));
 		}
 	} // end for loop
 
