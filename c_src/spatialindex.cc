@@ -106,7 +106,10 @@ spatial_function(ErlNifEnv* env, idx_state *pState,
 			GEOSContextHandle_t, 
 			const GEOSPreparedGeometry*,
 			const GEOSGeometry*
-		), int exact);
+		));
+
+ERL_NIF_TERM
+intersects_mbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* maxs);
 
 int64_t 
 hash(const unsigned char* szVal);
@@ -444,6 +447,10 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
 	idx_state *pState;
 	GEOSGeometry* geom = NULL;
+	double* mins = NULL;
+	double* maxs = NULL;
+	uint32_t dims;
+
 	int functCode = 0;
 	char szDbCrs[MAXBUFLEN];
 	char szReqCrs[MAXBUFLEN];
@@ -732,7 +739,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		enif_get_int(env, argv[4], &functCode);
 		break;
 	case 6:
-	    // min max bbox query with exact intersection of index geometry
+	    // min max bbox query with intersection of index geometry
 		const ERL_NIF_TERM* min_tuple;
 		const ERL_NIF_TERM* max_tuple;
 		int min_dims, max_dims;
@@ -741,6 +748,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 		enif_get_tuple(env, argv[1], &min_dims, &min_tuple);
 		enif_get_tuple(env, argv[2], &max_dims, &max_tuple);
+		enif_get_int(env, argv[3], &functCode);
 
 		if (enif_get_string(env, argv[4], szDbCrs, 
 			MAXBUFLEN, ERL_NIF_LATIN1) > 0)
@@ -753,47 +761,81 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 		if (min_dims == max_dims)
 		{
-			double mins[min_dims];
-			double maxs[max_dims];
+			enif_get_int(env, argv[3], &functCode);
+			
+			
+			// dims is dependent on the index used
+			IndexPropertyH props = Index_GetProperties(pState->index);
+			dims = IndexProperty_GetDimension(props);
+
+			mins = (double*)calloc(dims, sizeof(double)); 
+			maxs = (double*)calloc(dims, sizeof(double)); 
 
 			if (get_min_max_tuple(env, mins, maxs, min_tuple,
 													max_tuple, min_dims) 
 													== RT_None)
 			{
-				// make a bbox from the coordinates and call intersects
-				cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
-				for (int i = 0; i < min_dims; i++)
+				if (functCode != 0)
 				{
-					GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
-						cs, 0, i, mins[i]);
-					GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
-						cs, 1, i, maxs[i]);
-				}
-
-				// create an envelope of the min / max linestring
-				// coordinates are now owned by linestring
-				ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);
-				geom = GEOSEnvelope_r(pState->geosCtx, ls);
-
-				// try to reproject the request geometry if possible
-				if (enif_get_string(env, argv[3], szReqCrs, 
-					MAXBUFLEN, ERL_NIF_LATIN1) > 0)
-				{
-					GEOSGeometry* pProjGeom =
-						reproject_geom(pState->geosCtx,
-			 				geom, get_crs(szReqCrs), get_crs(szDbCrs));
-					if (pProjGeom != NULL)
+					// geometry query
+					// make a bbox from the coordinates and call intersects
+					cs = GEOSCoordSeq_create_r(pState->geosCtx, 2, min_dims);
+					for (int i = 0; i < min_dims; i++)
 					{
-						GEOSGeom_destroy_r(pState->geosCtx, geom);
-						geom = pProjGeom;
+						GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
+							cs, 0, i, mins[i]);
+						GEOSCoordSeq_setOrdinate_r(pState->geosCtx,
+							cs, 1, i, maxs[i]);
+					}
+
+					// create an envelope of the min / max linestring
+					// coordinates are now owned by linestring
+					ls = GEOSGeom_createLineString_r(pState->geosCtx, cs);
+					geom = GEOSEnvelope_r(pState->geosCtx, ls);
+
+					// try to reproject the request geometry if possible
+					if (enif_get_string(env, argv[3], szReqCrs, 
+						MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+					{
+						GEOSGeometry* pProjGeom =
+							reproject_geom(pState->geosCtx,
+				 				geom, get_crs(szReqCrs), get_crs(szDbCrs));
+						if (pProjGeom != NULL)
+						{
+							GEOSGeom_destroy_r(pState->geosCtx, geom);
+							geom = pProjGeom;
+						}
+					}
+					GEOSGeom_destroy_r(pState->geosCtx, ls);
+				}
+				else
+				{
+					if (enif_get_string(env, argv[3], szReqCrs, 
+						MAXBUFLEN, ERL_NIF_LATIN1) > 0)
+					{
+							// reproject mins/maxs array
+							long src = get_crs(szReqCrs);
+							long target = get_crs(szDbCrs);
+							char csSrcDefn[MAXBUFLEN];
+							char csTgtDefn[MAXBUFLEN];
+
+							if (target != src)
+							{
+								// reproject coord seq,
+								// only support EPSG
+								enif_mutex_lock(csMapMutex);
+
+								strcpy(csSrcDefn, CSepsg2adskCS(src));
+								strcpy(csTgtDefn, CSepsg2adskCS(target));
+			
+								CS_cnvrt(csSrcDefn, csTgtDefn, mins);
+								CS_cnvrt(csSrcDefn, csTgtDefn, maxs);
+								enif_mutex_unlock(csMapMutex);
+							}
 					}
 				}
-
-				GEOSGeom_destroy_r(pState->geosCtx, ls);
 			}
 		}
-
-		enif_get_int(env, argv[3], &functCode);
 		break;
 	default: 
 		// return
@@ -802,7 +844,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			ERL_NIF_LATIN1));
 	}
 
-	if (geom != NULL)
+	if ((geom != NULL) || (functCode == 0))
 	{
 		// switch function call
 		ERL_NIF_TERM result;
@@ -812,67 +854,67 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			case 0:
 			{
 				// INTERSECTS_MBR
-				result = spatial_function(env, pState, geom, &GEOSPreparedIntersects_r, 0);
+				result = intersects_mbr(env, pState, dims, mins, maxs);					
 				break;
 			}
 			case 1:
 			{
 				// INTERSECTS 
-				result = spatial_function(env, pState, geom, &GEOSPreparedIntersects_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedIntersects_r);
 				break;
 			}
 			case 2: 
 			{
 				// CONTAINS
-				result = spatial_function(env, pState, geom, &GEOSPreparedContains_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedContains_r);
 				break;
 			}
 			case 3: 
 			{
 				// CONTAINS PROPERLY
-				result = spatial_function(env, pState, geom, &GEOSPreparedContainsProperly_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedContainsProperly_r);
 				break;
 			}
 			case 4:
 			{
 				// COVERED BY
-				result = spatial_function(env, pState, geom, &GEOSPreparedCoveredBy_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedCoveredBy_r);
 				break;
 			}
 			case 5:
 			{
 				// COVERS
-				result = spatial_function(env, pState, geom, &GEOSPreparedCovers_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedCovers_r);
 				break;
 			}
 			case 6:
 			{
 				// CROSSES
-				result = spatial_function(env, pState, geom, &GEOSPreparedCrosses_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedCrosses_r);
 				break;
 			}
 			case 7:
 			{
 				// DISJOINT
-				result = spatial_function(env, pState, geom, &GEOSPreparedDisjoint_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedDisjoint_r);
 				break;
 			}
 			case 8:
 			{
 				// OVERLAPS
-				result = spatial_function(env, pState, geom, &GEOSPreparedOverlaps_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedOverlaps_r);
 				break;
 			}
 			case 9:
 			{
 				// TOUCHES
-				result = spatial_function(env, pState, geom, &GEOSPreparedTouches_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedTouches_r);
 				break;
 			}
 			case 10:
 			{
 				// WITHIN
-				result = spatial_function(env, pState, geom, &GEOSPreparedWithin_r, 1);
+				result = spatial_function(env, pState, geom, &GEOSPreparedWithin_r);
 				break;
 			}
 			default:
@@ -882,7 +924,14 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				ERL_NIF_LATIN1));
 		}
 
-		GEOSGeom_destroy_r(pState->geosCtx, geom);
+		if (geom != NULL)
+			GEOSGeom_destroy_r(pState->geosCtx, geom);
+
+		if (mins)
+			free(mins);
+
+		if (maxs)
+			free(maxs);
 
 		return result;
 	}
@@ -1451,13 +1500,89 @@ get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs,
 	return result;
 }
 
+ERL_NIF_TERM
+intersects_mbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* maxs)
+{
+	ERL_NIF_TERM resultList;
+	uint64_t nResults;
+	IndexItemH* items;
+
+	if (Index_Intersects_obj(pState->index, mins, maxs,
+							 dims, &items, &nResults) != RT_None)
+	{
+		char buf[MAXBUFLEN];
+		char* pszErrorMsg = Error_GetLastErrorMsg();
+		sprintf(buf, "Unable to execute query : %s", pszErrorMsg);
+		free(pszErrorMsg);
+
+		return enif_make_tuple2(env, idx_atoms.error, 
+			enif_make_string(env, 
+				buf, ERL_NIF_LATIN1));
+	}
+	else
+	{
+		resultList = enif_make_list(env, 0);
+		for (uint64_t i = 0; i < nResults; i++)
+		{
+			unsigned char* data = NULL;
+			uint64_t len = 0;
+			IndexItemH item = items[i];
+			if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
+			{
+				ErlNifBinary bin;
+				int doc_len;
+
+				// data is a NULL terminated string followed by WKB
+				doc_len = strlen((char*)data) + 1;
+
+				if (enif_alloc_binary(doc_len - 1, &bin))
+				{
+					memcpy(bin.data, data, doc_len - 1);
+					ERL_NIF_TERM head = enif_make_binary(env, &bin);
+					resultList = enif_make_list_cell(env, head, resultList);
+				}
+				else
+				{
+					char buf[MAXBUFLEN];
+					char doc[doc_len];
+					memcpy(doc, data, doc_len);
+					doc[doc_len - 1] = 0;
+					sprintf(buf, "unable to assign doc id %s to erlang term",
+											 doc);
+
+					free(data);
+					IndexItem_Destroy(item);
+
+					return enif_make_tuple2(env, idx_atoms.error, 
+						enif_make_string(env, buf, ERL_NIF_LATIN1));
+				}
+			}
+			else
+			{
+				char buf[MAXBUFLEN];
+				char* pszErrorMsg = Error_GetLastErrorMsg();
+				sprintf(buf, "Unable to execute query: %s", pszErrorMsg);
+				free(pszErrorMsg);
+
+				return enif_make_tuple2(env, idx_atoms.error, 
+					enif_make_string(env, 
+					buf, ERL_NIF_LATIN1));
+			}
+
+			free(data);
+			IndexItem_Destroy(item);
+		} // end for loop
+		return enif_make_tuple2(env, idx_atoms.ok, resultList);
+	}
+}
+
 ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState, 
 	GEOSGeometry* geom,
 	char (*pGEOS_Fun_r)(
 			GEOSContextHandle_t, 
 			const GEOSPreparedGeometry*,
 			const GEOSGeometry*
-		), int exact)
+		))
 {
 	ERL_NIF_TERM resultList;
 	const GEOSPreparedGeometry* pg = NULL;
@@ -1467,8 +1592,7 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 	double* mins;
 	double* maxs;
 
-	if (exact)
-		pg = GEOSPrepare_r(pState->geosCtx, geom);
+	pg = GEOSPrepare_r(pState->geosCtx, geom);
 	
 	// calculate mins and maxs from input geometry
 	// dims is dependent on the index used
@@ -1484,8 +1608,7 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 	{
 		free(mins);
 		free(maxs);
-		if (exact)
-			GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+		GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
 
 		char buf[MAXBUFLEN];
 		char* pszErrorMsg = Error_GetLastErrorMsg();
@@ -1518,49 +1641,39 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 
 			if (enif_alloc_binary(doc_len - 1, &bin))
 			{
-				if (exact)
+				// parse item WKB and test function exactly
+				wkb = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
+											data + doc_len,
+											len - doc_len);
+				if (wkb != NULL)
 				{
-					// parse item WKB and test function exactly
-					wkb = GEOSGeomFromWKB_buf_r(pState->geosCtx, 
-												data + doc_len,
-												len - doc_len);
-					if (wkb != NULL)
+					if ((*pGEOS_Fun_r)(pState->geosCtx,
+									pg, wkb))
 					{
-						if ((*pGEOS_Fun_r)(pState->geosCtx,
-										pg, wkb))
-						{
-							memcpy(bin.data, data, doc_len - 1);
-							ERL_NIF_TERM head = enif_make_binary(env, &bin);
-							resultList = enif_make_list_cell(env, head,
-															resultList);
-						}
-						GEOSGeom_destroy_r(pState->geosCtx, wkb);
+						memcpy(bin.data, data, doc_len - 1);
+						ERL_NIF_TERM head = enif_make_binary(env, &bin);
+						resultList = enif_make_list_cell(env, head,
+														resultList);
 					}
-					else
-					{
-						char buf[MAXBUFLEN];
-						char doc[doc_len];
-						memcpy(doc, data, doc_len);
-						doc[doc_len - 1] = 0;
-
-						sprintf(buf, "unable to parse document %s geometry",
-												 doc);
-
-						free(data);
-						IndexItem_Destroy(item);
-
-						if (exact)
-							GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
-
-						return enif_make_tuple2(env, idx_atoms.error, 
-							enif_make_string(env, buf, ERL_NIF_LATIN1));
-					}
+					GEOSGeom_destroy_r(pState->geosCtx, wkb);
 				}
 				else
 				{
-					memcpy(bin.data, data, doc_len - 1);
-					ERL_NIF_TERM head = enif_make_binary(env, &bin);
-					resultList = enif_make_list_cell(env, head, resultList);
+					char buf[MAXBUFLEN];
+					char doc[doc_len];
+					memcpy(doc, data, doc_len);
+					doc[doc_len - 1] = 0;
+
+					sprintf(buf, "unable to parse document %s geometry",
+											 doc);
+
+					free(data);
+					IndexItem_Destroy(item);
+
+					GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+
+					return enif_make_tuple2(env, idx_atoms.error, 
+						enif_make_string(env, buf, ERL_NIF_LATIN1));
 				}
 			}
 			else
@@ -1575,8 +1688,7 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 				free(data);
 				IndexItem_Destroy(item);
 
-				if (exact)
-					GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+				GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
 
 				return enif_make_tuple2(env, idx_atoms.error, 
 					enif_make_string(env, buf, ERL_NIF_LATIN1));
@@ -1598,8 +1710,7 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 		}
 	} // end for loop
 
-	if (exact)
-		GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
+	GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
 
 	return enif_make_tuple2(env, idx_atoms.ok, resultList);
 }

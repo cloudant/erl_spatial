@@ -22,8 +22,9 @@ centre_test() ->
     ?assertEqual({ok, {0.5, 0.5}}, erl_spatial:get_centre(Pt)).
 
 index_create_test() ->
-  % test create an in-memory r-tree
+  % test create an in-memory r*-tree, tpr-tree
   ?assertEqual({ok, <<>>}, erl_spatial:index_create()).
+  % ?assertEqual({ok, <<>>}, erl_spatial:index_tpr_create()).
 
 index_test() ->
   Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
@@ -215,20 +216,25 @@ index_persist_test() ->
     {ok, Idx2} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_DISK},
       {?IDX_FILENAME, Tmp},
       {?IDX_OVERWRITE, 0}]),
-  ?assertEqual({ok, 1}, erl_spatial:index_intersects_count(Idx, 
+  ?assertEqual({ok, 1}, erl_spatial:index_intersects_count(Idx,
                           {0.5, 0.5}, {0.5, 0.5})),
   erl_spatial:index_destroy(Idx),
   erl_spatial:index_destroy(Idx2).
 
-% index_md_test() ->
-%   % test create an in-memory r-tree
-%   {ok, Idx} = erl_spatial:index_create(),
-%   Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5, 1.0]}",
-%   ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"point">>, Pt)),
-%   % test plane intersection
-%   ?assertEqual({ok, []},
-%     erl_spatial:index_intersects(Idx, "POLYGON Z((0 1 2, 0 0 2, 1 0 2, 1 1 2, 0 1 2))")).
+index_md_test() ->
+  {ok, Idx} = erl_spatial:index_create([{?IDX_DIMENSION, 3}, {?IDX_STORAGE, ?IDX_MEMORY}]),
+  Pt1 = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5, 0.0]}",
+  ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"point1">>, Pt1)),
+  ?assertEqual({ok, [<<"point1">>]}, 
+        erl_spatial:index_intersects_mbr(Idx, {0.0, 0.0}, {1.0, 1.0})),
 
+  % point with z
+  Pt2 = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5, 0.5]}",
+  ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"point2">>, Pt2)),
+  ?assertEqual({ok, [<<"point2">>, <<"point1">>]}, 
+        erl_spatial:index_intersects_mbr(Idx, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0})),
+  ?assertEqual({ok, []}, 
+        erl_spatial:index_intersects_mbr(Idx, {0.0, 0.0, 0.25}, {1.0, 1.0, 0.25})).
 
 % benchmarks - tests to make sure everything is going fast enough
 % currently disabled and not maintained, here for reference
