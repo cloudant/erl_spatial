@@ -28,7 +28,8 @@
 			index_overlaps/2, index_overlaps/4, index_overlaps/3, index_overlaps/5,
 			index_touches/2, index_touches/4, index_touches/3, index_touches/5,
 			index_within/2, index_within/4, index_within/3, index_within/5,
-			index_bounds/1, index_delete/3, index_delete/4, 
+			index_nearest/3, index_nearest/5,
+			index_bounds/1, index_delete/3, index_delete/4,
 			index_get_resultset_limit/1, index_set_resultset_limit/2,
 			index_get_resultset_offset/1, index_set_resultset_offset/2,
 			index_destroy/1, index_flush/1, sidx_version/0, geos_version/0,
@@ -191,6 +192,13 @@ index_within(Idx, Min, Max, ReqCrs, DbCrs) ->
 index_within(Idx, Min, Max) ->
 	index_within(Idx, Min, Max, 0, 0).
 
+% nearest using MBRs
+index_nearest(Idx, Min, Max) ->
+	index_nearest(Idx, Min, Max, 0, 0).
+
+index_nearest(Idx, Min, Max, ReqCrs, DbCrs) ->
+	index_spatial_function(Idx, Min, Max, ReqCrs, DbCrs, ?ST_NEAREST).
+
 index_spatial_function(_Idx, _Request, _ReqCrs, _DbCrs, _FunName) ->
 	erlang:nif_error(not_loaded).
 
@@ -231,7 +239,7 @@ index_insert(Idx, Id, Json) ->
 	index_insert(Idx, Id, WKB, nif).
 
 index_insert(_Idx, _Id, _Data, nif) ->
-	erlang:nif_error(not_loaded).	
+	erlang:nif_error(not_loaded).
 
 index_delete(Idx, Id, Json) ->
 	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),

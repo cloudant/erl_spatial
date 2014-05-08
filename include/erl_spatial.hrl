@@ -70,3 +70,4 @@
 -define(ST_OVERLAPS, 8).
 -define(ST_TOUCHES, 9).
 -define(ST_WITHIN, 10).
+-define(ST_NEAREST, 11).
