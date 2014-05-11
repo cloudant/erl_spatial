@@ -23,10 +23,10 @@ centre_test() ->
 
 index_create_test() ->
   % test create an in-memory r*-tree, tpr-tree
-  ?assertEqual({ok, <<>>}, erl_spatial:index_create()).
-  % ?assertEqual({ok, <<>>}, erl_spatial:index_create(
-  %  [{?IDX_STORAGE, ?IDX_MEMORY},
-  %  {?IDX_INDEXTYPE, ?IDX_TPRTREE}])).
+  ?assertEqual({ok, <<>>}, erl_spatial:index_create()),
+  ?assertEqual({ok, <<>>}, erl_spatial:index_create(
+   [{?IDX_STORAGE, ?IDX_MEMORY},
+   {?IDX_INDEXTYPE, ?IDX_TPRTREE}])).
 
 index_test() ->
   Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
@@ -251,6 +251,54 @@ index_nearest_test() ->
   ?assertEqual({ok, [<<"3">>,<<"2">>,<<"4">>,<<"5">>,<<"1">>,
                                  <<"6">>,<<"7">>,<<"8">>,<<"9">>,<<"10">>]},
       erl_spatial:index_nearest(Idx, {3.0, 3.0}, {3.0, 3.0})).
+
+
+index_temporal_test() ->
+  {ok, Idx} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_MEMORY},
+    {?IDX_INDEXTYPE, ?IDX_TPRTREE}]),
+
+  Pt = "{\"type\":\"Point\",\"coordinates\":[0.5, 0.5]}",
+  Poly = "{ \"type\": \"Polygon\",
+      \"coordinates\": [
+        [ [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [0.0, 0.0] ]
+      ]
+  }",
+  Multi = "{\"type\": \"GeometryCollection\",
+        \"geometries\": [
+        {\"type\": \"Point\",
+          \"coordinates\": [0.5, 0.5 ]
+          },
+        { \"type\": \"LineString\",
+          \"coordinates\": [ [0.0, 0.0], [1.0, 1.0] ]
+        }
+      ]
+  }",
+  ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"point">>, Pt, {1, 1}, {1, 1}, 0, 10)),
+  ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"poly">>, Poly, {1, 1}, {1, 1}, 0, 10)),
+  ?assertEqual(ok, erl_spatial:index_insert(Idx, <<"multi">>, Multi, {1, 1}, {1, 1}, 0, 10)),
+
+  % test intersects and an operator to check flow
+  ?assertEqual({ok, 3}, erl_spatial:index_intersects_count(Idx,
+                          {0.5, 0.5}, {0.5, 0.5}, {0, 0}, {0, 0}, 0, 10)),
+
+  ?assertEqual({ok, [<<"point">>, <<"poly">>, <<"multi">>]}, erl_spatial:index_intersects_mbr(Idx,
+                        {0.5, 0.5}, {0.5, 0.5}, 0, 10, 0, 0)),
+
+  % cleanup
+  ?assertEqual(ok, erl_spatial:index_delete(Idx, <<"point">>, Pt, {1, 1}, {1, 1}, 0, 10)),
+  ?assertEqual(ok, erl_spatial:index_delete(Idx, <<"poly">>, Poly, {1, 1}, {1, 1}, 0, 10)),
+  ?assertEqual(ok, erl_spatial:index_delete(Idx, <<"multi">>, Multi, {1, 1}, {1, 1}, 0, 10)).
+
+  % % test nearest temporal
+  % lists:foreach(fun(X) ->
+  %     Px = io_lib:fwrite("{\"type\":\"Point\",\"coordinates\":[~p, 0]}", [X]),
+  %     ?assertEqual(ok, erl_spatial:index_insert(Idx, list_to_binary(integer_to_list(X)), Px,
+  %       {1,1}, {1,1}, 10, 20))
+  %   end, lists:seq(1, 10)),
+  % ?assertEqual({ok, [<<"3">>,<<"2">>,<<"4">>,<<"5">>,<<"1">>,
+  %                                <<"6">>,<<"7">>,<<"8">>,<<"9">>,<<"10">>]},
+  %     erl_spatial:index_nearest(Idx, {3.0, 3.0}, {3.0, 3.0}, 10, 20, 0, 0)).
+
 
 % benchmarks - tests to make sure everything is going fast enough
 % currently disabled and not maintained, here for reference

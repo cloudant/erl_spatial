@@ -111,6 +111,9 @@ spatial_function(ErlNifEnv* env, idx_state *pState,
 ERL_NIF_TERM
 spatial_mbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* maxs, bool nearest);
 
+ERL_NIF_TERM
+spatial_tmbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* maxs, double tStart, double tEnd, bool nearest);
+
 int64_t
 hash(const unsigned char* szVal);
 
@@ -320,7 +323,7 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	unsigned char* pszDocId;
 	ErlNifBinary bin, wkb;
 	GEOSGeometry* geom;
-	uint32_t dims;
+	int dims;
 	int doc_len;
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
@@ -343,16 +346,14 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		(geom = GEOSGeomFromWKB_buf_r(pState->geosCtx,
 			wkb.data, wkb.size)) != NULL)
 	{
-		double* mins;
-		double* maxs;
 		unsigned char* pData;
 
 		// dims is dependent on the index used
 		IndexPropertyH props = Index_GetProperties(pState->index);
-		dims = IndexProperty_GetDimension(props);
+		dims = (int)IndexProperty_GetDimension(props);
 
-		mins = (double*)malloc(dims * sizeof(double));
-		maxs = (double*)malloc(dims * sizeof(double));
+		double mins[dims];
+		double maxs[dims];
 		get_min_max(pState->geosCtx, geom, mins, maxs, dims);
 
 		// doc id is null terminated join wkb data and doc id together
@@ -361,27 +362,105 @@ index_insert_data(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		memcpy(pData, (unsigned char*)pszDocId, doc_len);
 		memcpy(pData + doc_len, wkb.data, wkb.size);
 
-		if (Index_InsertData(pState->index,
-			hash(pszDocId), mins, maxs, dims,
-			(uint8_t *)pData, wkb.size + doc_len) != RT_None)
+		if (argc == 8)
 		{
-			char buf[MAXBUFLEN];
+			// temporal insert
+			const ERL_NIF_TERM* minv_tuple;
+			const ERL_NIF_TERM* maxv_tuple;
+			bool bSuccess = TRUE;
+			double tStart, tEnd;
 
-			free(mins);
-			free(maxs);
-			free(pData);
-			free(pszDocId);
-			GEOSGeom_destroy_r(pState->geosCtx, geom);
-			sprintf(buf, "unable to insert document %s into index", pszDocId);
-			return enif_make_tuple2(env, idx_atoms.error,
-				enif_make_string(env, buf, ERL_NIF_LATIN1));
+			double minsV[dims];
+			double maxsV[dims];
+
+			// temporal data
+			if (!enif_get_tuple(env, argv[3], &dims, &minv_tuple))
+			{
+				bSuccess = FALSE;
+			}
+
+			if (!enif_get_tuple(env, argv[4], &dims, &maxv_tuple))
+			{
+				bSuccess = FALSE;
+			}
+
+			if (get_min_max_tuple(env, minsV, maxsV, minv_tuple, maxv_tuple, dims)
+																!= RT_None)
+			{
+				bSuccess = FALSE;
+			}
+
+			if (!enif_get_double(env, argv[5], &tStart))
+			{
+				int tS;
+				if (!enif_get_int(env, argv[5], &tS))
+				{
+					bSuccess = FALSE;
+				}
+				else
+					tStart = tS;
+			}
+
+			if (!enif_get_double(env, argv[6], &tEnd))
+			{
+				int tE;
+				if (!enif_get_int(env, argv[6], &tE))
+				{
+					bSuccess = FALSE;
+				}
+				else
+					tEnd = tE;
+			}
+
+			if (bSuccess)
+			{
+				if (Index_InsertTPData(pState->index,
+					hash(pszDocId), mins, maxs, minsV, maxsV, tStart, tEnd, dims,
+					(uint8_t *)pData, wkb.size + doc_len) != RT_None)
+				{
+					char buf[MAXBUFLEN];
+
+					free(pData);
+					free(pszDocId);
+					GEOSGeom_destroy_r(pState->geosCtx, geom);
+					char* pszErrorMsg = Error_GetLastErrorMsg();
+					sprintf(buf, "unable to insert document %s into index: %s", pszDocId, pszErrorMsg);
+					free(pszErrorMsg);
+					return enif_make_tuple2(env, idx_atoms.error,
+						enif_make_string(env, buf, ERL_NIF_LATIN1));
+				}
+			}
+			else
+			{
+				free(pData);
+				free(pszDocId);
+				GEOSGeom_destroy_r(pState->geosCtx, geom);
+				return enif_make_tuple2(env, idx_atoms.error,
+						enif_make_string(env,
+						"Unable to parse velocity bounding rectangle", ERL_NIF_LATIN1));
+			}
+		}
+		else
+		{
+			if (Index_InsertData(pState->index,
+				hash(pszDocId), mins, maxs, dims,
+				(uint8_t *)pData, wkb.size + doc_len) != RT_None)
+			{
+				char buf[MAXBUFLEN];
+
+				free(pData);
+				free(pszDocId);
+				GEOSGeom_destroy_r(pState->geosCtx, geom);
+				sprintf(buf, "unable to insert document %s into index", pszDocId);
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env, buf, ERL_NIF_LATIN1));
+			}
 		}
 
-		free(mins);
-		free(maxs);
 		free(pData);
 		free(pszDocId);
 		GEOSGeom_destroy_r(pState->geosCtx, geom);
+
 		return idx_atoms.ok;
 	}
 	else
@@ -398,6 +477,9 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	idx_state *pState;
 	const ERL_NIF_TERM* min_tuple;
 	const ERL_NIF_TERM* max_tuple;
+	const ERL_NIF_TERM* minv_tuple;
+	const ERL_NIF_TERM* maxv_tuple;
+	double tStart, tEnd;
 	int min_dims, max_dims;
 	uint64_t nResults = 0;
 
@@ -411,6 +493,40 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	if (!enif_get_tuple(env, argv[2], &max_dims, &max_tuple))
 		return enif_make_tuple2(env, idx_atoms.error,
 			enif_make_string(env, "Unable to parse max tuple", ERL_NIF_LATIN1));
+
+	if (argc == 7)
+	{
+		if (!enif_get_tuple(env, argv[3], &min_dims, &minv_tuple))
+			return enif_make_tuple2(env, idx_atoms.error,
+				enif_make_string(env, "Unable to parse low velocity tuple", ERL_NIF_LATIN1));
+
+		if (!enif_get_tuple(env, argv[4], &max_dims, &maxv_tuple))
+			return enif_make_tuple2(env, idx_atoms.error,
+				enif_make_string(env, "Unable to parse high velocity tuple", ERL_NIF_LATIN1));
+
+		if (!enif_get_double(env, argv[5], &tStart))
+		{
+			int tS;
+			if (!enif_get_int(env, argv[5], &tS))
+			{
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env, "Unable to parse start time", ERL_NIF_LATIN1));
+			}
+			else
+				tStart = tS;
+		}
+
+		if (!enif_get_double(env, argv[6], &tEnd))
+		{
+			int tE;
+			if (!enif_get_int(env, argv[6], &tE))
+			{
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env, "Unable to parse end time", ERL_NIF_LATIN1));
+			}
+			tEnd = tE;
+		}
+	}
 
 	if (!(min_dims == max_dims))
 		return enif_make_tuple2(env, idx_atoms.error,
@@ -426,17 +542,44 @@ index_intersects_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			enif_make_string(env, "error getting min and max values",
 				ERL_NIF_LATIN1));
 
-	if (Index_Intersects_count(pState->index, mins,
-								maxs, min_dims, &nResults) != RT_None)
+	if (argc == 7)
 	{
-			char buf[MAXBUFLEN];
-			char* pszErrorMsg = Error_GetLastErrorMsg();
-			sprintf(buf, "Unable to execute query: %s", pszErrorMsg);
-			free(pszErrorMsg);
+		double vmins[min_dims];
+		double vmaxs[max_dims];
 
+		if (get_min_max_tuple(env, vmins, vmaxs, minv_tuple, maxv_tuple, min_dims)
+																		!= RT_None)
 			return enif_make_tuple2(env, idx_atoms.error,
-				enif_make_string(env,
-					buf, ERL_NIF_LATIN1));
+				enif_make_string(env, "error getting low and high velocity values",
+					ERL_NIF_LATIN1));
+
+		if (Index_TPIntersects_count(pState->index, mins,
+									maxs, vmins, vmaxs, tStart, tEnd, min_dims, &nResults) != RT_None)
+		{
+				char buf[MAXBUFLEN];
+				char* pszErrorMsg = Error_GetLastErrorMsg();
+				sprintf(buf, "Unable to execute temporal query: %s", pszErrorMsg);
+				free(pszErrorMsg);
+
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env,
+						buf, ERL_NIF_LATIN1));
+		}
+	}
+	else
+	{
+		if (Index_Intersects_count(pState->index, mins,
+									maxs, min_dims, &nResults) != RT_None)
+		{
+				char buf[MAXBUFLEN];
+				char* pszErrorMsg = Error_GetLastErrorMsg();
+				sprintf(buf, "Unable to execute query: %s", pszErrorMsg);
+				free(pszErrorMsg);
+
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env,
+						buf, ERL_NIF_LATIN1));
+		}
 	}
 
 	return enif_make_tuple2(env, idx_atoms.ok,  enif_make_uint64(env, nResults));
@@ -449,6 +592,8 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	GEOSGeometry* geom = NULL;
 	double* mins = NULL;
 	double* maxs = NULL;
+	double tStart = 0.0;
+	double tEnd = 0.0;
 	uint32_t dims;
 
 	int functCode = 0;
@@ -461,6 +606,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	// is this a bbox, wkt or radius query
 	switch (argc) {
 	case 5:
+	{
 		int cnt;
 		const ERL_NIF_TERM* tuple;
 
@@ -490,7 +636,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				{
 						GEOSGeometry* pProjGeom =
 							reproject_geom(pState->geosCtx,
-				 				geom, get_crs(szReqCrs), get_crs(szDbCrs));
+								geom, get_crs(szReqCrs), get_crs(szDbCrs));
 						if (pProjGeom != NULL)
 						{
 							GEOSGeom_destroy_r(pState->geosCtx, geom);
@@ -517,7 +663,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 					double dist;
 
 					long EpsgCode, reqEpsgCode;
-				 	char csSrcDefn[MAXBUFLEN];
+					char csSrcDefn[MAXBUFLEN];
 					const char* csKeyName = "LL";
 					double xyz[3];
 					GEOSGeometry* pt;
@@ -570,10 +716,10 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 								// use the convenience method,
 								// azimuth is degrees from north
-		 						if (CS_azddll(eRadius, eSq, xyz, 90.0, dist,
-		 							xyz_result) == 0)
-		 						{
-		 							// convert back to original cs
+								if (CS_azddll(eRadius, eSq, xyz, 90.0, dist,
+									xyz_result) == 0)
+								{
+									// convert back to original cs
 									if ((CS_cnvrt(csKeyName, csSrcDefn, xyz_result) == 0)
 										&& CS_cnvrt(csKeyName, csSrcDefn, xyz) == 0)
 									{
@@ -606,8 +752,8 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 										GEOSBufferParams_destroy_r(pState->geosCtx, bp);
 									}
-		 						}
-		 					}
+								}
+							}
 						}
 						enif_mutex_unlock(csMapMutex);
 					}
@@ -617,7 +763,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 				{
 					double x_range, y_range;
 					long EpsgCode, reqEpsgCode;
-				 	char csSrcDefn[MAXBUFLEN];
+					char csSrcDefn[MAXBUFLEN];
 					const char* csKeyName = "LL";
 					double xyz[3];
 					int bReprojected = 1;
@@ -689,11 +835,11 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 								// use the convenience method,
 								// azimuth is degrees from north
-		 						if ((CS_azddll(eRadius, eSq, xyz, 90.0, x_range,
-		 							xyz_result_x) == 0) &&
-		 							(CS_azddll(eRadius, eSq, xyz, 0.0, y_range, xyz_result_y) == 0))
-		 						{
-		 							// convert back to original cs
+								if ((CS_azddll(eRadius, eSq, xyz, 90.0, x_range,
+									xyz_result_x) == 0) &&
+									(CS_azddll(eRadius, eSq, xyz, 0.0, y_range, xyz_result_y) == 0))
+								{
+									// convert back to original cs
 									if ((CS_cnvrt(csKeyName, csSrcDefn, xyz_result_x) == 0)
 										&& (CS_cnvrt(csKeyName, csSrcDefn, xyz_result_y) == 0) &&
 										(CS_cnvrt(csKeyName, csSrcDefn, xyz) == 0))
@@ -719,8 +865,8 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 										GEOSWKTReader_destroy_r(pState->geosCtx, wktReader);
 									}
-		 						}
-		 					}
+								}
+							}
 						}
 
 						enif_mutex_unlock(csMapMutex);
@@ -738,8 +884,31 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
 		enif_get_int(env, argv[4], &functCode);
 		break;
+	}
+	case 8:
+	{
+		// note not using a break here intentionally
+		if (argc == 8)
+		{
+			// get start and end time
+			if (!enif_get_double(env, argv[6], &tStart))
+			{
+				int tS;
+				enif_get_int(env, argv[6], &tS);
+				tStart =tS;
+			}
+
+			if (!enif_get_double(env, argv[7], &tEnd))
+			{
+				int tE;
+				enif_get_int(env, argv[7], &tE);
+				tEnd = tE;
+			}
+		}
+	}
 	case 6:
-	    // min max bbox query with intersection or nearest of index geometry
+	{
+			// min max bbox query with intersection or nearest of index geometry
 		const ERL_NIF_TERM* min_tuple;
 		const ERL_NIF_TERM* max_tuple;
 		int min_dims, max_dims;
@@ -773,7 +942,9 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 													max_tuple, min_dims)
 													== RT_None)
 			{
-				if ((functCode != ST_INTERSECTS_MBR) && (functCode != ST_NEAREST))
+				if ((functCode != ST_INTERSECTS_MBR)
+					&& (functCode != ST_NEAREST)
+					&& (functCode != ST_TPINTERSECTS_MBR))
 				{
 					// geometry query
 					// make a bbox from the coordinates and call intersects
@@ -797,7 +968,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 					{
 						GEOSGeometry* pProjGeom =
 							reproject_geom(pState->geosCtx,
-				 				geom, get_crs(szReqCrs), get_crs(szDbCrs));
+								geom, get_crs(szReqCrs), get_crs(szDbCrs));
 						if (pProjGeom != NULL)
 						{
 							GEOSGeom_destroy_r(pState->geosCtx, geom);
@@ -836,6 +1007,7 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			}
 		}
 		break;
+	}
 	default:
 		// return
 		return enif_make_tuple2(env, idx_atoms.error,
@@ -843,7 +1015,10 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			ERL_NIF_LATIN1));
 	}
 
-	if ((geom != NULL) || (functCode == ST_INTERSECTS_MBR) || (functCode == ST_NEAREST))
+	if ((geom != NULL) ||
+		(functCode == ST_INTERSECTS_MBR) ||
+		 (functCode == ST_NEAREST) ||
+		 (functCode == ST_TPINTERSECTS_MBR))
 	{
 		// switch function call
 		ERL_NIF_TERM result;
@@ -854,6 +1029,16 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 			case ST_INTERSECTS_MBR:
 			{
 				result = spatial_mbr(env, pState, dims, mins, maxs, false);
+				break;
+			}
+			case ST_TPINTERSECTS_MBR:
+			{
+				result = spatial_tmbr(env, pState, dims, mins, maxs, tStart, tEnd, false);
+				break;
+			}
+			case ST_TPNEAREST:
+			{
+				result = spatial_tmbr(env, pState, dims, mins, maxs, tStart, tEnd, true);
 				break;
 			}
 			case ST_INTERSECTS:
@@ -931,9 +1116,9 @@ index_spatial_function(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	}
 	else
 	{
-	    // check CsMap
+			// check CsMap
 		char errMsg[MAXBUFLEN];
-	    CS_errmsg(errMsg, MAXBUFLEN);
+			CS_errmsg(errMsg, MAXBUFLEN);
 
 		return enif_make_tuple2(env, idx_atoms.error,
 			enif_make_string(env, errMsg,
@@ -1001,7 +1186,7 @@ index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 	unsigned char* pszDocId;
 	ErlNifBinary bin, wkb;
 	GEOSGeometry* geom;
-	uint32_t dims;
+	int dims;
 
 	if (!enif_get_resource(env, argv[0], index_type, (void **) &pState))
 		return enif_make_badarg(env);
@@ -1022,42 +1207,110 @@ index_delete(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 		(geom = GEOSGeomFromWKB_buf_r(pState->geosCtx,
 			wkb.data, wkb.size)) != NULL)
 	{
-		double* mins;
-		double* maxs;
-
 		// dims is dependent on the index used
 		IndexPropertyH props = Index_GetProperties(pState->index);
-		dims = IndexProperty_GetDimension(props);
+		dims = (int)IndexProperty_GetDimension(props);
 
-		mins = (double*)malloc(dims * sizeof(double));
-		maxs = (double*)malloc(dims * sizeof(double));
+		double mins[dims];
+		double maxs[dims];
 
 		get_min_max(pState->geosCtx, geom, mins, maxs, dims);
 
-		if (Index_DeleteData(pState->index, hash(pszDocId), mins,
-				maxs, dims) != RT_None)
+		if (argc == 8)
 		{
-			char buf[MAXBUFLEN];
+			// temporal delete
+			const ERL_NIF_TERM* minv_tuple;
+			const ERL_NIF_TERM* maxv_tuple;
+			bool bSuccess = TRUE;
+			double tStart, tEnd;
+			double minsV[dims];
+			double maxsV[dims];
 
-			free(mins);
-			free(maxs);
-			free(pszDocId);
-			GEOSGeom_destroy_r(pState->geosCtx, geom);
+			// temporal data
+			if (!enif_get_tuple(env, argv[3], &dims, &minv_tuple))
+			{
+				bSuccess = FALSE;
+			}
 
-			sprintf(buf, "unable to delete document %s from index", pszDocId);
-			return enif_make_tuple2(env, idx_atoms.error,
-						enif_make_string(env, buf, ERL_NIF_LATIN1));
+			if (!enif_get_tuple(env, argv[4], &dims, &maxv_tuple))
+			{
+				bSuccess = FALSE;
+			}
 
+			if (get_min_max_tuple(env, minsV, maxsV, minv_tuple, maxv_tuple, dims)
+																!= RT_None)
+			{
+				bSuccess = FALSE;
+			}
+
+			if (!enif_get_double(env, argv[5], &tStart))
+			{
+				int tS;
+				if (!enif_get_int(env, argv[5], &tS))
+				{
+					bSuccess = FALSE;
+				}
+				else
+					tStart = tS;
+			}
+
+			if (!enif_get_double(env, argv[6], &tEnd))
+			{
+				int tE;
+				if (!enif_get_int(env, argv[6], &tE))
+				{
+					bSuccess = FALSE;
+				}
+				else
+					tEnd = tE;
+			}
+
+			if (bSuccess)
+			{
+				if (Index_DeleteTPData(pState->index, hash(pszDocId), mins,
+						maxs, minsV, maxsV, tStart, tEnd, dims) != RT_None)
+				{
+					char buf[MAXBUFLEN];
+					char* pszErrorMsg = Error_GetLastErrorMsg();
+					free(pszDocId);
+					GEOSGeom_destroy_r(pState->geosCtx, geom);
+
+					sprintf(buf, "Unable to delete document: %s : %s", pszDocId, pszErrorMsg);
+					free(pszErrorMsg);
+
+					return enif_make_tuple2(env, idx_atoms.error,
+								enif_make_string(env, buf, ERL_NIF_LATIN1));
+				}
+			}
+			else
+			{
+				free(pszDocId);
+				GEOSGeom_destroy_r(pState->geosCtx, geom);
+				return enif_make_tuple2(env, idx_atoms.error,
+						enif_make_string(env,
+						"Unable to parse velocity bounding rectangle", ERL_NIF_LATIN1));
+			}
 		}
 		else
 		{
-			free(mins);
-			free(maxs);
-			free(pszDocId);
-			GEOSGeom_destroy_r(pState->geosCtx, geom);
+			if (Index_DeleteData(pState->index, hash(pszDocId), mins,
+					maxs, dims) != RT_None)
+			{
+				char buf[MAXBUFLEN];
+				free(pszDocId);
+				GEOSGeom_destroy_r(pState->geosCtx, geom);
 
-			return idx_atoms.ok;
+				sprintf(buf, "unable to delete document %s from index", pszDocId);
+				return enif_make_tuple2(env, idx_atoms.error,
+							enif_make_string(env, buf, ERL_NIF_LATIN1));
+
+			}
 		}
+		free(pszDocId);
+		GEOSGeom_destroy_r(pState->geosCtx, geom);
+
+		return idx_atoms.ok;
+
 	}
 	else
 	{
@@ -1501,6 +1754,108 @@ get_min_max_seq(GEOSContextHandle_t geosCtx, const GEOSCoordSequence* cs,
 }
 
 ERL_NIF_TERM
+spatial_tmbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* maxs, double tStart, double tEnd, bool nearest)
+{
+	ERL_NIF_TERM resultList, sortedList;
+	uint64_t nResults;
+	IndexItemH* items;
+	RTError res;
+	double* minsv;
+	double* maxsv;
+
+	// force static query objects
+	minsv = (double*)calloc(dims, sizeof(double));
+	maxsv = (double*)calloc(dims, sizeof(double));
+
+	if (nearest)
+	{
+		res = Index_TPNearestNeighbors_obj(pState->index, mins, maxs, minsv, maxsv,
+								tStart, tEnd, dims, &items, &nResults);
+	}
+	else
+	{
+		res = Index_TPIntersects_obj(pState->index, mins, maxs, minsv, maxsv,
+								tStart, tEnd, dims, &items, &nResults);
+	}
+
+	free(minsv);
+	free(maxsv);
+
+	if (res != RT_None)
+	{
+		char buf[MAXBUFLEN];
+		char* pszErrorMsg = Error_GetLastErrorMsg();
+		sprintf(buf, "Unable to execute query : %s", pszErrorMsg);
+		free(pszErrorMsg);
+
+		return enif_make_tuple2(env, idx_atoms.error,
+			enif_make_string(env,
+				buf, ERL_NIF_LATIN1));
+	}
+	else
+	{
+		resultList = enif_make_list(env, 0);
+
+		for (uint64_t i = 0; i < nResults; i++)
+		{
+			unsigned char* data = NULL;
+			uint64_t len = 0;
+			IndexItemH item = items[i];
+			if (IndexItem_GetData(item, (uint8_t **)&data, &len) == RT_None)
+			{
+				ErlNifBinary bin;
+				int doc_len;
+
+				// data is a NULL terminated string followed by WKB
+				doc_len = strlen((char*)data) + 1;
+
+				if (enif_alloc_binary(doc_len - 1, &bin))
+				{
+					memcpy(bin.data, data, doc_len - 1);
+					ERL_NIF_TERM head = enif_make_binary(env, &bin);
+					resultList = enif_make_list_cell(env, head, resultList);
+				}
+				else
+				{
+					char buf[MAXBUFLEN];
+					char doc[doc_len];
+					memcpy(doc, data, doc_len);
+					doc[doc_len - 1] = 0;
+					sprintf(buf, "unable to assign doc id %s to erlang term",
+											doc);
+
+					free(data);
+					IndexItem_Destroy(item);
+
+					return enif_make_tuple2(env, idx_atoms.error,
+						enif_make_string(env, buf, ERL_NIF_LATIN1));
+				}
+			}
+			else
+			{
+				char buf[MAXBUFLEN];
+				char* pszErrorMsg = Error_GetLastErrorMsg();
+				sprintf(buf, "Unable to execute query: %s", pszErrorMsg);
+				free(pszErrorMsg);
+
+				return enif_make_tuple2(env, idx_atoms.error,
+					enif_make_string(env,
+					buf, ERL_NIF_LATIN1));
+			}
+
+			free(data);
+			IndexItem_Destroy(item);
+		} // end for loop
+
+		// reverse the results
+		enif_make_reverse_list(env, resultList, &sortedList);
+
+		return enif_make_tuple2(env, idx_atoms.ok, sortedList);
+	}
+}
+
+
+ERL_NIF_TERM
 spatial_mbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* maxs, bool nearest)
 {
 	ERL_NIF_TERM resultList, sortedList;
@@ -1604,8 +1959,6 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 	uint64_t nResults;
 	IndexItemH* items;
 	uint32_t dims;
-	double* mins;
-	double* maxs;
 
 	pg = GEOSPrepare_r(pState->geosCtx, geom);
 
@@ -1614,15 +1967,14 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 	IndexPropertyH props = Index_GetProperties(pState->index);
 	dims = IndexProperty_GetDimension(props);
 
-	mins = (double*)malloc(dims * sizeof(double));
-	maxs = (double*)malloc(dims * sizeof(double));
+	double mins[dims];
+	double maxs[dims];
+
 	get_min_max(pState->geosCtx, geom, mins, maxs, dims);
 
 	if (Index_Intersects_obj(pState->index, mins, maxs,
 							 dims, &items, &nResults) != RT_None)
 	{
-		free(mins);
-		free(maxs);
 		GEOSPreparedGeom_destroy_r(pState->geosCtx, pg);
 
 		char buf[MAXBUFLEN];
@@ -1634,8 +1986,6 @@ ERL_NIF_TERM spatial_function(ErlNifEnv* env, idx_state *pState,
 			enif_make_string(env,
 				buf, ERL_NIF_LATIN1));
 	}
-	free(mins);
-	free(maxs);
 
 	resultList = enif_make_list(env, 0);
 

@@ -53,7 +53,9 @@ typedef enum {
 	ST_OVERLAPS = 8,
 	ST_TOUCHES = 9,
 	ST_WITHIN = 10,
-	ST_NEAREST = 11
+	ST_NEAREST = 11,
+	ST_TPINTERSECTS_MBR = 12,
+	ST_TPNEAREST = 13
 } SpatialFuns;
 
 int load(ErlNifEnv* env, void** priv, ERL_NIF_TERM info);

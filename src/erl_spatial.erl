@@ -16,8 +16,8 @@
 -on_load(init/0).
 
 -export([index_create/0, index_create/1,
-			index_insert/3, index_insert/4,
-			index_intersects_count/3, index_intersects_mbr/3, index_intersects_mbr/5,
+			index_insert/3, index_insert/4, index_insert/7, index_insert/8,
+			index_intersects_count/3, index_intersects_count/7, index_intersects_mbr/3, index_intersects_mbr/5, index_intersects_mbr/7,
 			index_intersects/2, index_intersects/4, index_intersects/3, index_intersects/5,
 			index_contains/2, index_contains/4, index_contains/3, index_contains/5,
 			index_contains_properly/2, index_contains_properly/4, index_contains_properly/3, index_contains_properly/5,
@@ -28,8 +28,8 @@
 			index_overlaps/2, index_overlaps/4, index_overlaps/3, index_overlaps/5,
 			index_touches/2, index_touches/4, index_touches/3, index_touches/5,
 			index_within/2, index_within/4, index_within/3, index_within/5,
-			index_nearest/3, index_nearest/5,
-			index_bounds/1, index_delete/3, index_delete/4,
+			index_nearest/3, index_nearest/5, index_nearest/7,
+			index_bounds/1, index_delete/3, index_delete/4, index_delete/7, index_delete/8,
 			index_get_resultset_limit/1, index_set_resultset_limit/2,
 			index_get_resultset_offset/1, index_set_resultset_offset/2,
 			index_destroy/1, index_flush/1, sidx_version/0, geos_version/0,
@@ -53,9 +53,16 @@ index_create(_Props) ->
 index_intersects_count(_Idx, _Min, _Max) ->
 	erlang:nif_error(not_loaded).
 
+index_intersects_count(_Idx, _Min, _Max, _MinV, _MaxV, _Start, _End) ->
+	erlang:nif_error(not_loaded).
+
 % libspatialindex and geos
 
-% minimum bounding rectangle (mbr) is a convenience function
+% minimum bounding rectangle
+index_intersects_mbr(Idx, Min, Max, Start, End, ReqCrs, DbCrs) ->
+  index_spatial_function(Idx, Min, Max,
+		ReqCrs, DbCrs, ?ST_TPINTERSECTS_MBR, Start, End).
+
 index_intersects_mbr(Idx, Min, Max) ->
 	index_intersects_mbr(Idx, Min, Max, 0, 0).
 
@@ -193,6 +200,9 @@ index_within(Idx, Min, Max) ->
 	index_within(Idx, Min, Max, 0, 0).
 
 % nearest using MBRs
+index_nearest(Idx, Min, Max, Start, End, ReqCrs, DbCrs) ->
+	index_spatial_function(Idx, Min, Max, ReqCrs, DbCrs, ?ST_TPNEAREST, Start, End).
+
 index_nearest(Idx, Min, Max) ->
 	index_nearest(Idx, Min, Max, 0, 0).
 
@@ -203,6 +213,9 @@ index_spatial_function(_Idx, _Request, _ReqCrs, _DbCrs, _FunName) ->
 	erlang:nif_error(not_loaded).
 
 index_spatial_function(_Idx, _Min, _Max, _ReqCrs, _DbCrs, _FunName) ->
+	erlang:nif_error(not_loaded).
+
+index_spatial_function(_Idx, _Min, _Max, _ReqCrs, _DbCrs, _FunName, _tStart, _tEnd) ->
 	erlang:nif_error(not_loaded).
 
 % end of geos
@@ -234,11 +247,25 @@ sidx_version() ->
 geos_version() ->
 	erlang:nif_error(not_loaded).
 
+index_insert(Idx, Id, Json, MinV, MaxV, Start, End) ->
+	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
+	index_insert(Idx, Id, WKB, MinV, MaxV, Start, End, nif).
+
+index_insert(_Idx, _Id, _WKB, _MinV, _MaxV, _Start, _End, nif) ->
+	erlang:nif_error(not_loaded).
+
 index_insert(Idx, Id, Json) ->
 	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
 	index_insert(Idx, Id, WKB, nif).
 
 index_insert(_Idx, _Id, _Data, nif) ->
+	erlang:nif_error(not_loaded).
+
+index_delete(Idx, Id, Json, MinV, MaxV, Start, End) ->
+	{ok, WKB} = wkb_writer:geojson_to_wkb(Json),
+	index_delete(Idx, Id, WKB, MinV, MaxV, Start, End, nif).
+
+index_delete(_Idx, _Id, _Data, _MinV, _MaxV, _Start, _End, nif) ->
 	erlang:nif_error(not_loaded).
 
 index_delete(Idx, Id, Json) ->

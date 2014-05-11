@@ -71,3 +71,5 @@
 -define(ST_TOUCHES, 9).
 -define(ST_WITHIN, 10).
 -define(ST_NEAREST, 11).
+-define(ST_TPINTERSECTS_MBR, 12).
+-define(ST_TPNEAREST, 13).
