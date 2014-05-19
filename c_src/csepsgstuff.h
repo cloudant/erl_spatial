@@ -303,6 +303,7 @@ struct TcsEpsgOrntTypeMap
 // TcsEPsgDataSetV6 object.
 const wchar_t* GetEpsgTableName (EcsEpsgTable tblId);
 EcsEpsgTable GetEpsgTableId (const wchar_t* tableName);
+EcsEpsgField GetEpsgCodeFieldId (EcsEpsgTable tableId);
 short GetEpsgCodeFieldNbr (EcsEpsgTable tableId);
 short GetEpsgFieldNumber (EcsEpsgTable tableId,EcsEpsgField fieldId);
 
@@ -341,7 +342,7 @@ public:
 	bool operator< (unsigned long epsgCode) const;
 	bool operator< (const std::wstring& epsgCode) const;
 	bool operator== (unsigned long epsgCode) const;
-	bool operator== (unsigned int  epsgCode) const;
+        bool operator== (unsigned int  epsgCode) const;
 	bool operator== (const std::wstring& epsgCode) const;
 	bool operator> (unsigned long epsgCode) const;
 	bool operator> (const std::wstring& epsgCode) const;
@@ -379,6 +380,7 @@ private:
 	// Private Data Members
 	unsigned long EpsgCode;
 };
+//newPage//
 //newPage//
 //============================================================================
 // EPSG Table Specialization
@@ -457,16 +459,22 @@ public:
 
 	// The following apply to the record identified by the recordNbr parameter,
 	// they do not affect the current record setting.
-	bool GetField (std::wstring& result,unsigned recNbr,EcsEpsgField fieldId) const;
+	bool GetField (std::wstring& result,unsigned int recNbr,EcsEpsgField fieldId) const;
 	bool GetAsLong (long& result,unsigned recNbr,EcsEpsgField fieldId) const;
 	bool GetAsULong (unsigned long& result,unsigned recNbr,EcsEpsgField fieldId) const;
 	bool GetAsEpsgCode (TcsEpsgCode& result,unsigned recNbr,EcsEpsgField fieldId) const;
 	bool GetAsReal (double& result,unsigned recNbr,EcsEpsgField fieldId) const;
 
+	// The following provides access to the derived TcsCsvFileBase::GetField
+	// function without the caller having to have knowledge of the
+	// TcsCsvStatus object.
+	bool GetField (std::wstring& result,unsigned recNbr,short fieldNbr) const;
+
 	// This structure is used to provide the csvStatus parameter required by
 	// the TcsCsvFileBase base object.  The contents are highly dependent
 	// on the context and last operation.  Probably should be a protected
 	// function.
+	TcsCsvStatus& GetCsvStatus (void);
 	const TcsCsvStatus& GetCsvStatus (void) const;
 private:
 	//=========================================================================
@@ -494,6 +502,10 @@ private:
 // tables or writing changes back to the .csv files.  There are just no member
 // functions at this time to support such operation.
 //
+// EPSG is up to version 8 now (September 2013), but the format has not changed
+// significantly since Version 6; so we'll stick with this name until a major
+// change occurs.
+//
 class TcsEpsgDataSetV6
 {
 public:
@@ -503,7 +515,7 @@ public:
     static short GetFldName (std::wstring& fieldName,EcsEpsgTable tableId,EcsEpsgField fieldId);
     //=========================================================================
 	// Construction  /  Destruction  /  Assignment
-	TcsEpsgDataSetV6 (const wchar_t* databaseFolder,const wchar_t* revLevel);
+	TcsEpsgDataSetV6 (const wchar_t* databaseFolder,const wchar_t* revLevel = 0);
 	TcsEpsgDataSetV6 (const TcsEpsgDataSetV6& source);
 	virtual ~TcsEpsgDataSetV6 (void);
 	TcsEpsgDataSetV6& operator= (const TcsEpsgDataSetV6& rhs);
@@ -514,11 +526,15 @@ public:
 	// Implementation of these functions can be found in csEpsgStuff.cpp
 	//=========================================================================
 	//		Basic Support Functions
+	bool IsOk (void);
+	bool IsOk (void) const;
 	TcsEpsgTable* GetTablePtr (EcsEpsgTable tableId);
 	const TcsEpsgTable* GetTablePtr (EcsEpsgTable tableId) const;
 	unsigned GetRecordCount (EcsEpsgTable tableId) const;
 	bool ConvertUnits (double& result,TcsEpsgCode trgUomCode,double value,
 															 TcsEpsgCode srcUomCode) const;
+	const wchar_t* GetRevisionLevel (void) const;
+	std::wstring GetFailMessage (void) const;
 	//=========================================================================
 	// Some general access functions:
 	// Step through an EPSG table one record at a time.
@@ -581,6 +597,7 @@ protected:
 	unsigned LocateParameterValue (const TcsEpsgCode& opCode,const TcsEpsgCode& opMethCode,
 															 const TcsEpsgCode& prmCode) const;
 	bool AddDatumParameterValues (struct cs_Dtdef_& datum,const TcsEpsgCode& operationCode) const;
+	bool DetermineRevisionLevel (void);
 private:
 	//=========================================================================
 	// Private Support Functions
@@ -593,8 +610,10 @@ private:
 													   const TcsEpsgCode& horzUomCode) const;
 	//=========================================================================
 	// Private Data Members
+	bool Ok;
 	std::wstring RevisionLevel;				// The revision level of the EPSG data in this object
 	std::wstring DatabaseFolder;			// The folder in which the .CSV files reside.
+	std::wstring FailMessage;
 	std::map<EcsEpsgTable,TcsEpsgTable*> EpsgTables;
 											// The individual tables of the EPSG dataset.
 };

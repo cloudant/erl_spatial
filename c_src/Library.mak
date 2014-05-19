@@ -49,6 +49,7 @@ CSMAP_LIB_SRC = \
 	CS_frnch.c \
 	CS_gauss.c \
 	CS_general.c \
+	CS_geocn.c \
 	CS_geoct.c \
 	CS_geoid96.c \
 	CS_geoid99.c \
@@ -198,6 +199,7 @@ CSMAP_LIB_OBJ = \
 	CS_frnch.o \
 	CS_gauss.o \
 	CS_general.o \
+	CS_geocn.o \
 	CS_geoct.o \
 	CS_geoid96.o \
 	CS_geoid99.o \
