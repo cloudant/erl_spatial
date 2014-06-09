@@ -117,6 +117,9 @@ spatial_tmbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* 
 int64_t
 hash(const unsigned char* szVal);
 
+int
+reverse_list(ErlNifEnv* env, ERL_NIF_TERM term, ERL_NIF_TERM *list);
+
 long
 get_crs(char *crs);
 
@@ -1847,8 +1850,7 @@ spatial_tmbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* 
 			IndexItem_Destroy(item);
 		} // end for loop
 
-		// reverse the results
-		enif_make_reverse_list(env, resultList, &sortedList);
+		reverse_list(env, resultList, &sortedList);
 
 		return enif_make_tuple2(env, idx_atoms.ok, sortedList);
 	}
@@ -1939,8 +1941,7 @@ spatial_mbr(ErlNifEnv* env, idx_state *pState, int dims, double* mins, double* m
 			IndexItem_Destroy(item);
 		} // end for loop
 
-		// reverse the results
-		enif_make_reverse_list(env, resultList, &sortedList);
+		reverse_list(env, resultList, &sortedList);
 
 		return enif_make_tuple2(env, idx_atoms.ok, sortedList);
 	}
@@ -2132,6 +2133,32 @@ get_crs(char *crs)  {
     if( ptr != NULL)
         ptr++;
     return atol(ptr);
+}
+
+// not introduced until Erlang R15 enif_make_reverse_list
+int
+reverse_list(ErlNifEnv* env, ERL_NIF_TERM term, ERL_NIF_TERM *list) {
+		ERL_NIF_TERM val;
+		uint len = 0;
+
+		if (enif_get_list_length(env, term, &len))
+		{
+			ERL_NIF_TERM arr[len];
+			int i = 1;
+
+			while(enif_get_list_cell(env, term, &val, &term))
+			{
+				arr[len - i] = val;
+				i++;
+			}
+
+			*list = enif_make_list_from_array(env, arr, len);
+			return true;
+		}
+		else
+		{
+			return false;
+		}
 }
 
 void
