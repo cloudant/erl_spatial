@@ -11,9 +11,11 @@ cd ../geos-3.4.2
 make
 
 cd ../CsMap/Source
+cp ../../Library.mak .
 make -fLibrary.mak
 
 cd ../Dictionaries
+cp ../../Compiler.mak .
 make -fCompiler.mak
 
 rm -rf ../../../priv/CsDict
