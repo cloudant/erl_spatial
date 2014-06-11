@@ -1,4 +1,4 @@
-C_FLG = -c -DGCC_3 -D__CPP__ -Wall -O3 -I../Include
+C_FLG = -c -DGCC_3 -D__CPP__ -Wall -O3 -I../Include -fPIC
 
 CPP_FLG = -c -DGCC_3 -D__CPP__ -Wall -O3 -I../Include -fPIC
 
