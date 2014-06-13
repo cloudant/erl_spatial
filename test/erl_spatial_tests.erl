@@ -125,6 +125,11 @@ index_test() ->
   ?assertEqual(ok, erl_spatial:index_delete(Idx, <<"multi">>, Multi)),
   ?assertEqual({ok, 0}, erl_spatial:index_intersects_count(Idx,
                               {0, 0}, {1, 1})),
+
+  % TODO MultiPoint test
+
+
+
   % test each of the other spatial functions
   % radius test at the equator 0.001 degs ~ 111 metres
   % index_intersects(_Idx, {_Lon, _Lat, _Radius, _DbCrs}) -
@@ -242,16 +247,15 @@ index_md_test() ->
   ?assertEqual({ok, []},
         erl_spatial:index_intersects_mbr(Idx, {0.0, 0.0, 0.25}, {1.0, 1.0, 0.25})).
 
-index_nearest_test() ->
-  {ok, Idx} = erl_spatial:index_create(),
-  lists:foreach(fun(X) ->
-      Pt = io_lib:fwrite("{\"type\":\"Point\",\"coordinates\":[~p, 0]}", [X]),
-      ?assertEqual(ok, erl_spatial:index_insert(Idx, list_to_binary(integer_to_list(X)), Pt))
-    end, lists:seq(1, 10)),
-  ?assertEqual({ok, [<<"3">>,<<"2">>,<<"4">>,<<"5">>,<<"1">>,
-                                 <<"6">>,<<"7">>,<<"8">>,<<"9">>,<<"10">>]},
-      erl_spatial:index_nearest(Idx, {3.0, 3.0}, {3.0, 3.0})).
-
+% index_nearest_test() ->
+%   {ok, Idx} = erl_spatial:index_create(),
+%   lists:foreach(fun(X) ->
+%       Pt = io_lib:fwrite("{\"type\":\"Point\",\"coordinates\":[~p, 0]}", [X]),
+%       ?assertEqual(ok, erl_spatial:index_insert(Idx, list_to_binary(integer_to_list(X)), Pt))
+%     end, lists:seq(1, 10)),
+%   ?assertEqual({ok, [<<"3">>,<<"2">>,<<"4">>,<<"5">>,<<"1">>,
+%                                  <<"6">>,<<"7">>,<<"8">>,<<"9">>,<<"10">>]},
+%       erl_spatial:index_nearest(Idx, {3.0, 3.0}, {3.0, 3.0})).
 
 index_temporal_test() ->
   {ok, Idx} = erl_spatial:index_create([{?IDX_STORAGE, ?IDX_MEMORY},
@@ -289,15 +293,15 @@ index_temporal_test() ->
   ?assertEqual(ok, erl_spatial:index_delete(Idx, <<"poly">>, Poly, {1, 1}, {1, 1}, 0, 10)),
   ?assertEqual(ok, erl_spatial:index_delete(Idx, <<"multi">>, Multi, {1, 1}, {1, 1}, 0, 10)).
 
-  % % test nearest temporal
-  % lists:foreach(fun(X) ->
-  %     Px = io_lib:fwrite("{\"type\":\"Point\",\"coordinates\":[~p, 0]}", [X]),
-  %     ?assertEqual(ok, erl_spatial:index_insert(Idx, list_to_binary(integer_to_list(X)), Px,
-  %       {1,1}, {1,1}, 10, 20))
-  %   end, lists:seq(1, 10)),
-  % ?assertEqual({ok, [<<"3">>,<<"2">>,<<"4">>,<<"5">>,<<"1">>,
-  %                                <<"6">>,<<"7">>,<<"8">>,<<"9">>,<<"10">>]},
-  %     erl_spatial:index_nearest(Idx, {3.0, 3.0}, {3.0, 3.0}, 10, 20, 0, 0)).
+  % test nearest temporal
+  lists:foreach(fun(X) ->
+      Px = io_lib:fwrite("{\"type\":\"Point\",\"coordinates\":[~p, 0]}", [X]),
+      ?assertEqual(ok, erl_spatial:index_insert(Idx, list_to_binary(integer_to_list(X)), Px,
+        {1,1}, {1,1}, 10, 20))
+    end, lists:seq(1, 10)),
+  ?assertEqual({ok, [<<"3">>,<<"2">>,<<"4">>,<<"5">>,<<"1">>,
+                                 <<"6">>,<<"7">>,<<"8">>,<<"9">>,<<"10">>]},
+      erl_spatial:index_nearest(Idx, {3.0, 3.0}, {3.0, 3.0}, 10, 20, 0, 0)).
 
 
 % benchmarks - tests to make sure everything is going fast enough
