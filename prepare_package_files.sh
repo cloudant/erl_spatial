@@ -14,6 +14,6 @@ then
 fi
 if ! [ -d "CsMap" ];
 then
-  svn checkout http://svn.osgeo.org/metacrs/csmap/trunk/CsMapDev/ CsMap
+  svn checkout http://svn.osgeo.org/metacrs/csmap/branches/14.01/CsMapDev CsMap
 fi
 cd ..

@@ -15,6 +15,9 @@ cd ../geos-3.4.2
 make
 
 cd ../CsMap/Source
+cp ../../csEpsgSupport.cpp .
+cp ../../Library.mak .
+cp ../../csepsgstuff.h ../Include/
 make -fLibrary.mak
 
 cd ../Dictionaries
