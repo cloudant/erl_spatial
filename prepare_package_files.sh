@@ -10,7 +10,8 @@ fi
 # both libspatialindex and CsMap will be using fixed version as of the next release
 if ! [ -d "libspatialindex" ];
 then
-  git clone --branch 1.0.0 https://github.com/cloudant/libspatialindex.git
+  git clone https://github.com/cloudant/libspatialindex.git
+  git checkout 1.0.0
 fi
 if ! [ -d "CsMap" ];
 then
