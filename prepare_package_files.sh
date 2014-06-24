@@ -11,7 +11,7 @@ fi
 if ! [ -d "libspatialindex" ];
 then
   git clone https://github.com/cloudant/libspatialindex.git
-  cd libspatialindex; git checkout 1.0.0
+  cd libspatialindex; git checkout 1.0.0; cd ..
 fi
 if ! [ -d "CsMap" ];
 then
